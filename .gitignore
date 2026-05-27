@@ -1,0 +1,37 @@
+# credentials -- never commit these
+.env
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# local airflow state (db, logs, pid files)
+airflow-home/
+logs/
+airflow.cfg
+airflow.db
+webserver_config.py
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/.user.yml
+
+# data files -- raw/processed data belongs in S3, not the repo
+*.parquet
+*.csv
+*.json
+
+# jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# os
+.DS_Store
+Thumbs.db
