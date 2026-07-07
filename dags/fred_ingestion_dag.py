@@ -72,6 +72,7 @@ def fred_economic_ingestion():
 
     @task()
     def write_to_s3(payload: dict) -> dict:
+        import io
         import os
         import sys
         from datetime import date
@@ -84,7 +85,7 @@ def fred_economic_ingestion():
 
         from ingestion.fetch_fred import upload_to_s3
 
-        df = pd.read_json(payload["data_json"], orient="records")
+        df = pd.read_json(io.StringIO(payload["data_json"]), orient="records")
         run_date = date.fromisoformat(payload["run_date"])
         key = upload_to_s3(df, payload["series_id"], payload["label"], run_date)
         # drop data_json before returning so XCom stays small
