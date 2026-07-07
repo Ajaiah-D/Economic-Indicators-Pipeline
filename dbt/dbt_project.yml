@@ -32,27 +32,3 @@ models:
       +materialized: table
       +schema: marts
       +tags: ["mart"]
-
-sources:
-  - name: fred_raw
-    description: >
-      Raw Parquet output written by the PySpark transformation job.
-      Loaded via dbt-duckdb httpfs or registered as an external table in Spark.
-    tables:
-      - name: economic_indicators
-        description: Wide table of all six FRED indicators with engineered features.
-        columns:
-          - name: date
-            description: Observation date (monthly cadence for most series).
-          - name: cpi
-            description: Consumer Price Index for All Urban Consumers (1982-84=100).
-          - name: unemployment_rate
-            description: U-3 unemployment rate (%).
-          - name: gdp
-            description: Nominal GDP in billions of US dollars (quarterly series).
-          - name: fed_funds_rate
-            description: Effective federal funds rate (%).
-          - name: housing_starts
-            description: New privately-owned housing units started (thousands).
-          - name: consumer_sentiment
-            description: University of Michigan Consumer Sentiment Index.

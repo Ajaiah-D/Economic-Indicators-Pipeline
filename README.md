@@ -137,7 +137,7 @@ cp .env.example .env
 
 ## How to Run Each Stage
 
-### Stage 1 — Ingest from FRED to S3
+### Stage 1: Ingest from FRED to S3
 
 ```bash
 python ingestion/fetch_fred.py
@@ -148,7 +148,7 @@ Fetches all six series and uploads timestamped CSVs to
 
 ---
 
-### Stage 2 — Run the Airflow DAG locally
+### Stage 2: Run the Airflow DAG locally
 
 ```bash
 # Initialise the Airflow SQLite DB and start the web server + scheduler
@@ -166,7 +166,7 @@ The web UI is available at `http://localhost:8080` (default user: `admin`).
 
 ---
 
-### Stage 3 — PySpark transformation on Databricks
+### Stage 3: PySpark transformation on Databricks
 
 1. Log in to [Databricks Community Edition](https://community.cloud.databricks.com).
 2. Create a cluster (any runtime >= 13.3 LTS).
@@ -198,7 +198,7 @@ Snappy-compressed Parquet.
 
 ---
 
-### Stage 4 — Run dbt models
+### Stage 4: Run dbt models
 
 For **local testing with dbt-duckdb**, add a profile to `~/.dbt/profiles.yml`:
 
@@ -230,16 +230,16 @@ For **Databricks**, swap the profile to `dbt-spark` and point it at your cluster
 
 ---
 
-### Stage 5 — Launch the Streamlit dashboard
+### Stage 5: Launch the Streamlit dashboard
 
 ```bash
 streamlit run dashboard/app.py
 ```
 
 The dashboard loads data in this priority order:
-1. `dbt/target/economic_dashboard.parquet` (fastest — local dbt-duckdb output)
-2. S3 Parquet (via boto3 — set `AWS_*` env vars)
-3. Synthetic demo data (no backend required — great for UI previews)
+1. `dbt/target/economic_dashboard.parquet` (fastest, local dbt-duckdb output)
+2. S3 Parquet (via boto3; set `AWS_*` env vars)
+3. Synthetic demo data (no backend required, great for UI previews)
 
 ---
 
@@ -257,14 +257,14 @@ following stress conditions are simultaneously active on any given month:
 | Housing Starts Declining  | Housing starts MoM % change < 0                 |
 | Consumer Sentiment Falling| Sentiment MoM % change < 0                      |
 
-A score >= 3 triggers the **Recession Watch** flag — a heuristic inspired by
+A score >= 3 triggers the **Recession Watch** flag, a heuristic inspired by
 the simultaneous deterioration seen ahead of the 2008 and 2020 downturns.
 
 > **Placeholder for extended analysis:** After connecting live FRED data, add
 > a write-up here describing which signals fired in the most recent 12 months,
 > how the current signal score compares to historical recessions, and any
 > indicator divergences worth monitoring (e.g., persistent inflation while
-> unemployment remains low — a stagflation setup).
+> unemployment remains low, a stagflation setup).
 
 ---
 

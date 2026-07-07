@@ -48,7 +48,7 @@ select
     signal_score,
     recession_watch,
 
-    current_timestamp() as dbt_updated_at
+    current_timestamp as dbt_updated_at
 
 from trends
 order by date

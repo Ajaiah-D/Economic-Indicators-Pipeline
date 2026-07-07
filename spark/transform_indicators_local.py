@@ -1,0 +1,107 @@
+"""
+Local pandas equivalent of transform_indicators.py.
+
+Reproduces the same MoM % change, 3-month rolling average, and full outer
+join logic as the PySpark/Databricks job, without needing a Spark cluster.
+At this data volume (a few hundred rows per series), pandas does the same
+work with none of the cluster/Unity-Catalog setup Databricks Free Edition
+now requires for S3 access. Use spark/transform_indicators.py on an actual
+Databricks workspace if/when this project scales past what a single
+machine can hold in memory.
+"""
+
+import io
+import os
+
+import boto3
+import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BUCKET = os.environ["AWS_BUCKET_NAME"]
+REGION = os.environ.get("AWS_REGION", "us-east-1")
+RAW_PREFIX = "raw"
+PROCESSED_KEY = "processed/economic_indicators/part-0.parquet"
+
+INDICATORS = {
+    "CPIAUCSL": "cpi",
+    "UNRATE": "unemployment_rate",
+    "GDP": "gdp",
+    "FEDFUNDS": "fed_funds_rate",
+    "HOUST": "housing_starts",
+    "UMCSENT": "consumer_sentiment",
+}
+
+ROLLING_WINDOW = 3
+
+
+def s3_client():
+    return boto3.client(
+        "s3",
+        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        region_name=REGION,
+    )
+
+
+def read_raw_series(s3, series_id: str, label: str) -> pd.DataFrame:
+    prefix = f"{RAW_PREFIX}/{label}/"
+    paginator = s3.get_paginator("list_objects_v2")
+    keys = [
+        obj["Key"]
+        for page in paginator.paginate(Bucket=BUCKET, Prefix=prefix)
+        for obj in page.get("Contents", [])
+        if obj["Key"].endswith(f"{series_id}.csv")
+    ]
+    if not keys:
+        raise FileNotFoundError(f"No raw CSVs found under s3://{BUCKET}/{prefix}")
+
+    frames = []
+    for key in keys:
+        obj = s3.get_object(Bucket=BUCKET, Key=key)
+        frames.append(pd.read_csv(io.BytesIO(obj["Body"].read())))
+
+    df = pd.concat(frames, ignore_index=True)
+    df["date"] = pd.to_datetime(df["date"])
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = (
+        df.dropna(subset=["date", "value"])
+        .drop_duplicates(subset=["date"], keep="last")
+        .sort_values("date")
+        .rename(columns={"value": label})[["date", label]]
+        .reset_index(drop=True)
+    )
+    return df
+
+
+def add_features(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    df = df.copy()
+    df[f"{label}_mom_pct"] = df[label].pct_change() * 100
+    df[f"{label}_3m_avg"] = df[label].rolling(ROLLING_WINDOW).mean()
+    return df
+
+
+def run() -> pd.DataFrame:
+    s3 = s3_client()
+    wide = None
+
+    for series_id, label in INDICATORS.items():
+        print(f"Processing {series_id}...")
+        raw = read_raw_series(s3, series_id, label)
+        featured = add_features(raw, label)
+        wide = featured if wide is None else wide.merge(featured, on="date", how="outer")
+
+    wide = wide.sort_values("date").reset_index(drop=True)
+
+    buf = io.BytesIO()
+    wide.to_parquet(buf, engine="pyarrow", compression="snappy", index=False)
+    buf.seek(0)
+    s3.put_object(Bucket=BUCKET, Key=PROCESSED_KEY, Body=buf.getvalue())
+    print(f"Wrote {len(wide)} rows to s3://{BUCKET}/{PROCESSED_KEY}")
+    return wide
+
+
+if __name__ == "__main__":
+    result = run()
+    print(result.tail(10).to_string())
