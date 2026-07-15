@@ -33,6 +33,8 @@ INDICATORS = {
     "FEDFUNDS": "fed_funds_rate",
     "HOUST": "housing_starts",
     "UMCSENT": "consumer_sentiment",
+    "GS10": "treasury_10y",
+    "TB3MS": "treasury_3m",
 }
 
 ROLLING_WINDOW = 3
@@ -111,6 +113,9 @@ def run() -> DataFrame:
         featured.append(add_features(raw, label))
 
     wide = join_indicators(featured)
+    # 10-year minus 3-month Treasury spread -- a negative (inverted) spread
+    # is the single most established recession precursor in macro
+    wide = wide.withColumn("yield_spread", F.col("treasury_10y") - F.col("treasury_3m"))
     wide.printSchema()
     write_parquet(wide, PROCESSED_PATH)
     return wide

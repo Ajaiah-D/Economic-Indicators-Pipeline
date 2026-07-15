@@ -38,12 +38,17 @@ select
     housing_starts_3m_avg,
     consumer_sentiment_3m_avg,
 
+    treasury_10y,
+    treasury_3m,
+    yield_spread,
+
     flag_unemployment_rising,
     flag_gdp_contracting,
     flag_inflation_elevated,
     flag_fed_rate_elevated,
     flag_housing_declining,
     flag_sentiment_falling,
+    flag_yield_curve_inverted,
 
     signal_score,
     recession_watch,

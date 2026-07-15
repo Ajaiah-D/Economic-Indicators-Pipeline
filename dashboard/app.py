@@ -49,6 +49,7 @@ INDICATOR_META = {
     "fed_funds_rate":     {"label": "Fed Funds Rate",     "short": "Fed Funds",  "unit": "%",                   "fmt": "{:,.2f}%", "color": "#008300"},
     "housing_starts":     {"label": "Housing Starts",     "short": "Housing",    "unit": "Thousands of units",  "fmt": "{:,.0f}K", "color": "#4a3aa7"},
     "consumer_sentiment": {"label": "Consumer Sentiment", "short": "Sentiment",  "unit": "Index",               "fmt": "{:,.1f}", "color": "#e34948"},
+    "yield_spread":       {"label": "10Y-3M Treasury Spread", "short": "Yield Spread", "unit": "points",       "fmt": "{:+.2f}pt", "color": "#e87ba4"},
 }
 
 FLAG_DESCRIPTIONS = {
@@ -58,6 +59,7 @@ FLAG_DESCRIPTIONS = {
     "flag_fed_rate_elevated":   "Fed rate elevated vs its 3-year average",
     "flag_housing_declining":   "Housing starts declining",
     "flag_sentiment_falling":   "Consumer sentiment falling",
+    "flag_yield_curve_inverted": "Yield curve inverted",
 }
 
 # monthly level series -- a month is "complete" once these have published. GDP
@@ -90,6 +92,10 @@ GLOSSARY = {
     "consumer_sentiment": {
         "what": "The University of Michigan Consumer Sentiment Index: a survey-based gauge of how confident U.S. consumers feel about their finances and the economy.",
         "context": "Historically healthy: readings above ~90. Watch for: sustained readings below ~70 have historically coincided with recessions, since falling confidence tends to precede pullbacks in consumer spending.",
+    },
+    "yield_spread": {
+        "what": "The 10-year Treasury yield minus the 3-month Treasury yield. Normally long-term rates sit above short-term rates; when that flips negative (an \"inverted\" yield curve), it means investors expect the Fed to cut rates in response to a weakening economy.",
+        "context": "Historically healthy: positive, usually 1-2 points. Watch for: a meaningfully negative spread, which has preceded every U.S. recession since the 1960s and is widely considered the single most reliable recession indicator in economics, though it can lead by anywhere from several months to over a year.",
     },
 }
 
@@ -285,21 +291,23 @@ def _demo_data() -> pd.DataFrame:
     df["fed_funds_rate"]     = np.clip(rand_walk(2, 0.01, 0.15, len(rng)), 0, 8)
     df["housing_starts"]     = np.clip(rand_walk(1200, 0, 50, len(rng)), 500, 2000)
     df["consumer_sentiment"] = np.clip(rand_walk(80, 0, 3, len(rng)), 40, 110)
+    df["yield_spread"]       = np.clip(rand_walk(1.5, 0, 0.25, len(rng)), -2, 4)
 
     for col in INDICATOR_META:
         df[f"{col}_mom_pct"] = df[col].pct_change() * 100
         df[f"{col}_3m_avg"]  = df[col].rolling(3).mean()
 
-    df["flag_unemployment_rising"]  = df["unemployment_rate_3m_avg"] > df["unemployment_rate_3m_avg"].shift(3)
-    df["flag_gdp_contracting"]      = df["gdp_mom_pct"] < 0
-    df["flag_inflation_elevated"]   = df["cpi"].pct_change(12) * 100 > 3
-    df["flag_fed_rate_elevated"]    = df["fed_funds_rate"] > df["fed_funds_rate"].rolling(36, min_periods=24).mean() + 1.0
-    df["flag_housing_declining"]    = df["housing_starts_3m_avg"] < df["housing_starts_3m_avg"].shift(3)
-    df["flag_sentiment_falling"]    = df["consumer_sentiment_3m_avg"] < df["consumer_sentiment_3m_avg"].shift(3)
+    df["flag_unemployment_rising"]   = df["unemployment_rate_3m_avg"] > df["unemployment_rate_3m_avg"].shift(3)
+    df["flag_gdp_contracting"]       = df["gdp_mom_pct"] < 0
+    df["flag_inflation_elevated"]    = df["cpi"].pct_change(12) * 100 > 3
+    df["flag_fed_rate_elevated"]     = df["fed_funds_rate"] > df["fed_funds_rate"].rolling(36, min_periods=24).mean() + 1.0
+    df["flag_housing_declining"]     = df["housing_starts_3m_avg"] < df["housing_starts_3m_avg"].shift(3)
+    df["flag_sentiment_falling"]     = df["consumer_sentiment_3m_avg"] < df["consumer_sentiment_3m_avg"].shift(3)
+    df["flag_yield_curve_inverted"]  = df["yield_spread"] < -0.25
 
     flag_cols = list(FLAG_DESCRIPTIONS.keys())
     df["signal_score"]    = df[flag_cols].sum(axis=1)
-    df["recession_watch"] = df["signal_score"] >= 3
+    df["recession_watch"] = df["signal_score"] >= 4
     return df
 
 
@@ -378,7 +386,7 @@ def header(df: pd.DataFrame, meta: dict) -> None:
     st.markdown(
         f"""
         <div class="hero-title">U.S. Economic Indicators</div>
-        <div class="hero-sub">Six macro indicators from the Federal Reserve (FRED), with a composite recession-risk signal.</div>
+        <div class="hero-sub">Federal Reserve (FRED) macro indicators and Treasury yields, with a composite recession-risk signal.</div>
         <div class="hero-meta"><span class="live-dot"></span>{meta_bits}</div>
         """,
         unsafe_allow_html=True,
@@ -389,7 +397,7 @@ def header(df: pd.DataFrame, meta: dict) -> None:
 def status_for_score(score: int, recession_watch: bool) -> tuple[str, str]:
     if recession_watch:
         return STATUS["critical"], "Recession watch"
-    if score >= 2:
+    if score >= 3:
         return STATUS["warning"], "Elevated risk"
     return STATUS["good"], "Stable"
 
@@ -409,7 +417,7 @@ def signal_banner(df: pd.DataFrame) -> None:
             f"""
             <div class="banner" style="background:{_rgba(colour, 0.06)}; border-color:{_rgba(colour, 0.25)};">
                 <div style="color:{INK_MUTED}; font-size:0.76rem; font-weight:650; letter-spacing:0.08em; text-transform:uppercase;">Recession-risk signal</div>
-                <div class="banner-score" style="color:{INK_PRIMARY}; margin-top:0.35rem;">{score}<small>/6</small></div>
+                <div class="banner-score" style="color:{INK_PRIMARY}; margin-top:0.35rem;">{score}<small>/7</small></div>
                 <div style="margin-top:0.6rem;">
                     <span class="status-pill" style="background:{_rgba(colour, 0.14)}; color:{colour};">
                         <span class="status-dot" style="background:{colour};"></span>{label}
@@ -436,10 +444,10 @@ def signal_banner(df: pd.DataFrame) -> None:
             )
         st.markdown(
             f'<div style="color:{INK_MUTED}; font-size:0.8rem; margin-top:0.85rem; line-height:1.5;">'
-            "The score counts how many of six stress conditions are active at once. "
-            "A reading of 3 or more trips the recession-watch threshold. Backtested against every "
-            "NBER recession since 1959: it catches all 9, though it's a broad stress gauge rather "
-            "than a precise predictor (not a forecast).</div>",
+            "The score counts how many of seven stress conditions are active at once, including an "
+            "inverted yield curve. A reading of 4 or more trips the recession-watch threshold. "
+            "Backtested against every NBER recession since 1959: it catches all 9, with about 44% "
+            "of flagged months turning out to be false alarms (not a forecast).</div>",
             unsafe_allow_html=True,
         )
 
@@ -557,14 +565,14 @@ def signal_history(df: pd.DataFrame) -> None:
         x=df["date"], y=df["signal_score"], mode="lines",
         line=dict(color="#2a78d6", width=2, shape="hv"),
         fill="tozeroy", fillcolor="rgba(42,120,214,0.10)",
-        hovertemplate="Signal score: %{y} of 6<extra></extra>",
+        hovertemplate="Signal score: %{y} of 7<extra></extra>",
     ))
-    fig.add_hline(y=3, line_dash="dot", line_color=STATUS["critical"], line_width=1.5,
+    fig.add_hline(y=4, line_dash="dot", line_color=STATUS["critical"], line_width=1.5,
                   annotation_text="Recession-watch threshold",
                   annotation_position="top left",
                   annotation_font=dict(color=STATUS["critical"], size=11))
     fig = base_layout(fig, height=230)
-    fig.update_yaxes(range=[0, 6.3], dtick=1)
+    fig.update_yaxes(range=[0, 7.3], dtick=1)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     flag_cols = list(FLAG_DESCRIPTIONS.keys())

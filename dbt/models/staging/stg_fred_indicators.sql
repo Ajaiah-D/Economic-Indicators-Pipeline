@@ -33,7 +33,11 @@ with source as (
         cast(gdp_3m_avg               as double) as gdp_3m_avg,
         cast(fed_funds_rate_3m_avg    as double) as fed_funds_rate_3m_avg,
         cast(housing_starts_3m_avg    as double) as housing_starts_3m_avg,
-        cast(consumer_sentiment_3m_avg as double) as consumer_sentiment_3m_avg
+        cast(consumer_sentiment_3m_avg as double) as consumer_sentiment_3m_avg,
+
+        cast(treasury_10y as double) as treasury_10y,
+        cast(treasury_3m  as double) as treasury_3m,
+        cast(yield_spread as double) as yield_spread
 
     from {{ source('fred_raw', 'economic_indicators') }}
 
