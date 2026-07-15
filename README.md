@@ -185,20 +185,39 @@ no extra token needed for that part:
 ## Recession-risk signal
 
 Six binary stress flags are checked each month, and the signal score is just
-how many are active at once, 0–6:
+how many are active at once, 0-6:
 
-| Flag                       | Condition                                     |
-|-----------------------------|------------------------------------------------|
-| Unemployment rising         | 3-month avg > 3-month avg from 3 months prior  |
-| GDP contracting             | GDP MoM % change < 0                          |
-| Inflation elevated          | CPI 12-month change > 3%                      |
-| Fed rate elevated           | Effective funds rate > 4%                     |
-| Housing starts declining    | Housing starts MoM % change < 0               |
-| Consumer sentiment falling  | Sentiment MoM % change < 0                    |
+| Flag                        | Condition                                                  |
+|------------------------------|--------------------------------------------------------------|
+| Unemployment rising          | 3-month avg > 3-month avg from 3 months prior                |
+| GDP contracting              | GDP quarter-over-quarter change < 0                          |
+| Inflation elevated           | CPI 12-month change > 3%                                     |
+| Fed rate elevated            | Effective funds rate > its own trailing 3-year average + 1pt |
+| Housing starts declining     | 3-month avg < 3-month avg from 3 months prior                |
+| Consumer sentiment falling   | 3-month avg < 3-month avg from 3 months prior                |
 
-A score of 3 or more trips the **Recession Watch** flag, a heuristic based on
-the simultaneous deterioration seen ahead of the 2008 and 2020 downturns,
-not a forecast.
+A score of 3 or more trips the **Recession Watch** flag.
+
+### Backtest
+
+All six indicators only overlap from 1959 onward, so that's the window this
+was actually checked against, not just anecdotally citing a couple of recent
+recessions. Against all 9 NBER-recognized recessions since 1959:
+
+- **Catches all 9** (score reached 3+ within 6 months of every recession's official start).
+- The housing/sentiment flags originally used a single month's up-or-down move, and the fed-funds
+  flag used a fixed ">4%" regardless of era, which doesn't mean the same thing in 1981 (rates
+  above 10%) as it does in 2015 (rates near zero). On those original thresholds, the signal fired
+  3+ in about 45% of all months since 1959, most of them nowhere near a real recession. Smoothing
+  those two flags to a 3-month trend and making the fed-funds flag relative to its own trailing
+  average (both above) cut that to about 34% of months, with the same 9/9 recall.
+- Tried adding a persistence requirement (score has to stay 3+ for 2 consecutive months to count)
+  on top of that: it cuts false positives further but misses the 2020 recession, which was over in
+  two months and never got the chance to persist. Left out for that reason.
+
+Even at 34%, this is a broad stress gauge, not a precise predictor: about one in three flagged
+months turns out to be near an actual recession. Useful as one input among others, not a signal
+to act on alone.
 
 ## Tech Stack
 

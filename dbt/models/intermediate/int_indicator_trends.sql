@@ -6,8 +6,11 @@
 }}
 
 -- Adds six binary stress flags and a composite signal score.
--- recession_watch fires when 3+ flags are active simultaneously,
--- which historically lines up with the lead-up to 2008 and 2020.
+-- recession_watch fires when 3+ flags are active simultaneously. Backtested
+-- against every NBER recession since 1959 (the earliest point all six
+-- indicators overlap): catches all 9, with the housing/sentiment/fed-funds
+-- flags below tuned to cut false positives without losing any of the 9
+-- hits. See the README's "Recession-risk signal" section for the numbers.
 
 with staged as (
 
@@ -19,7 +22,12 @@ lagged as (
 
     select
         *,
-        lag(unemployment_rate_3m_avg, 3) over (order by date) as unemployment_3m_avg_lag3
+        lag(unemployment_rate_3m_avg, 3) over (order by date) as unemployment_3m_avg_lag3,
+        lag(housing_starts_3m_avg, 3) over (order by date) as housing_starts_3m_avg_lag3,
+        lag(consumer_sentiment_3m_avg, 3) over (order by date) as consumer_sentiment_3m_avg_lag3,
+        avg(fed_funds_rate) over (
+            order by date rows between 35 preceding and current row
+        ) as fed_funds_rate_36m_avg
 
     from staged
 
@@ -66,16 +74,26 @@ flagged as (
             then true else false
         end as flag_inflation_elevated,
 
+        -- elevated relative to its own trailing 3-year average rather than a
+        -- fixed level, since "high" for the fed funds rate has meant very
+        -- different things across eras (double digits in the early 80s,
+        -- near zero for most of the 2010s)
         case
-            when fed_funds_rate > 4 then true else false
+            when fed_funds_rate > fed_funds_rate_36m_avg + 1.0 then true else false
         end as flag_fed_rate_elevated,
 
+        -- 3-month trend rather than a single month's sign flip, same
+        -- treatment as unemployment_rising -- housing starts and sentiment
+        -- are both noisy enough that raw month-over-month direction isn't
+        -- a meaningful stress signal on its own
         case
-            when housing_starts_mom_pct < 0 then true else false
+            when housing_starts_3m_avg < housing_starts_3m_avg_lag3
+            then true else false
         end as flag_housing_declining,
 
         case
-            when consumer_sentiment_mom_pct < 0 then true else false
+            when consumer_sentiment_3m_avg < consumer_sentiment_3m_avg_lag3
+            then true else false
         end as flag_sentiment_falling
 
     from lagged

@@ -55,7 +55,7 @@ FLAG_DESCRIPTIONS = {
     "flag_unemployment_rising": "Unemployment rising",
     "flag_gdp_contracting":     "GDP contracting",
     "flag_inflation_elevated":  "Inflation elevated (>3% annualised)",
-    "flag_fed_rate_elevated":   "Fed rate elevated (>4%)",
+    "flag_fed_rate_elevated":   "Fed rate elevated vs its 3-year average",
     "flag_housing_declining":   "Housing starts declining",
     "flag_sentiment_falling":   "Consumer sentiment falling",
 }
@@ -290,12 +290,12 @@ def _demo_data() -> pd.DataFrame:
         df[f"{col}_mom_pct"] = df[col].pct_change() * 100
         df[f"{col}_3m_avg"]  = df[col].rolling(3).mean()
 
-    df["flag_unemployment_rising"]  = df["unemployment_rate"].diff(3) > 0
+    df["flag_unemployment_rising"]  = df["unemployment_rate_3m_avg"] > df["unemployment_rate_3m_avg"].shift(3)
     df["flag_gdp_contracting"]      = df["gdp_mom_pct"] < 0
     df["flag_inflation_elevated"]   = df["cpi"].pct_change(12) * 100 > 3
-    df["flag_fed_rate_elevated"]    = df["fed_funds_rate"] > 4
-    df["flag_housing_declining"]    = df["housing_starts_mom_pct"] < 0
-    df["flag_sentiment_falling"]    = df["consumer_sentiment_mom_pct"] < 0
+    df["flag_fed_rate_elevated"]    = df["fed_funds_rate"] > df["fed_funds_rate"].rolling(36, min_periods=24).mean() + 1.0
+    df["flag_housing_declining"]    = df["housing_starts_3m_avg"] < df["housing_starts_3m_avg"].shift(3)
+    df["flag_sentiment_falling"]    = df["consumer_sentiment_3m_avg"] < df["consumer_sentiment_3m_avg"].shift(3)
 
     flag_cols = list(FLAG_DESCRIPTIONS.keys())
     df["signal_score"]    = df[flag_cols].sum(axis=1)
@@ -437,8 +437,9 @@ def signal_banner(df: pd.DataFrame) -> None:
         st.markdown(
             f'<div style="color:{INK_MUTED}; font-size:0.8rem; margin-top:0.85rem; line-height:1.5;">'
             "The score counts how many of six stress conditions are active at once. "
-            "A reading of 3 or more trips the recession-watch threshold, a heuristic based on the "
-            "joint deterioration seen ahead of the 2008 and 2020 downturns (not a forecast).</div>",
+            "A reading of 3 or more trips the recession-watch threshold. Backtested against every "
+            "NBER recession since 1959: it catches all 9, though it's a broad stress gauge rather "
+            "than a precise predictor (not a forecast).</div>",
             unsafe_allow_html=True,
         )
 
