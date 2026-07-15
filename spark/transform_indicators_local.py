@@ -1,13 +1,10 @@
 """
-Local pandas equivalent of transform_indicators.py.
+Local pandas implementation of the indicator transform.
 
-Reproduces the same MoM % change, 3-month rolling average, and full outer
-join logic as the PySpark/Databricks job, without needing a Spark cluster.
-At this data volume (a few hundred rows per series), pandas does the same
-work with none of the cluster/Unity-Catalog setup Databricks Free Edition
-now requires for S3 access. Use spark/transform_indicators.py on an actual
-Databricks workspace if/when this project scales past what a single
-machine can hold in memory.
+Same MoM % change, 3-month rolling average, and full outer join as the
+PySpark job in transform_indicators.py, but without a Spark cluster. The
+whole dataset is a few hundred rows per series, so pandas is plenty here;
+the Spark version is kept for running the same logic at scale on Databricks.
 """
 
 import io
