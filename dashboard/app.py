@@ -112,6 +112,16 @@ def inject_css() -> None:
         header[data-testid="stHeader"] {{ background: transparent; }}
         h1, h2, h3 {{ font-family: {FONT}; letter-spacing: -0.02em; }}
 
+        /* wide enough for the date-range preset row; buttons wrap, never clip */
+        section[data-testid="stSidebar"] {{
+            width: 350px !important;
+            min-width: 350px !important;
+        }}
+        div[data-testid="stButtonGroup"] {{
+            flex-wrap: wrap;
+            gap: 4px;
+        }}
+
         .hero-title {{
             font-size: 2.15rem;
             font-weight: 680;
