@@ -22,6 +22,8 @@ INDICATORS = {
     "FEDFUNDS": "fed_funds_rate",
     "HOUST": "housing_starts",
     "UMCSENT": "consumer_sentiment",
+    "GS10": "treasury_10y",
+    "TB3MS": "treasury_3m",
 }
 
 

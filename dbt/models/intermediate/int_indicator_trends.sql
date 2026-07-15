@@ -5,12 +5,13 @@
     )
 }}
 
--- Adds six binary stress flags and a composite signal score.
--- recession_watch fires when 3+ flags are active simultaneously. Backtested
--- against every NBER recession since 1959 (the earliest point all six
--- indicators overlap): catches all 9, with the housing/sentiment/fed-funds
--- flags below tuned to cut false positives without losing any of the 9
--- hits. See the README's "Recession-risk signal" section for the numbers.
+-- Adds seven binary stress flags and a composite signal score.
+-- recession_watch fires when 4+ of 7 flags are active simultaneously.
+-- Backtested against every NBER recession since 1959 (the earliest point
+-- all indicators overlap): catches all 9, with the housing/sentiment/
+-- fed-funds/yield-curve flags below tuned to cut false positives without
+-- losing any of the 9 hits. See the README's "Recession-risk signal"
+-- section for the numbers.
 
 with staged as (
 
@@ -59,6 +60,10 @@ flagged as (
         housing_starts_3m_avg,
         consumer_sentiment_3m_avg,
 
+        treasury_10y,
+        treasury_3m,
+        yield_spread,
+
         case
             when unemployment_rate_3m_avg > unemployment_3m_avg_lag3
             then true else false
@@ -94,7 +99,16 @@ flagged as (
         case
             when consumer_sentiment_3m_avg < consumer_sentiment_3m_avg_lag3
             then true else false
-        end as flag_sentiment_falling
+        end as flag_sentiment_falling,
+
+        -- 10-year minus 3-month Treasury spread turning meaningfully
+        -- negative, not just barely negative -- the single most
+        -- established recession precursor in macro. -0.25pt tested
+        -- against a raw <0 cutoff and a 3-month-average version; this
+        -- gave the best precision of the three without losing recall
+        case
+            when yield_spread < -0.25 then true else false
+        end as flag_yield_curve_inverted
 
     from lagged
 
@@ -104,23 +118,25 @@ select
     *,
 
     (
-        cast(flag_unemployment_rising  as int)
-        + cast(flag_gdp_contracting    as int)
-        + cast(flag_inflation_elevated as int)
-        + cast(flag_fed_rate_elevated  as int)
-        + cast(flag_housing_declining  as int)
-        + cast(flag_sentiment_falling  as int)
+        cast(flag_unemployment_rising     as int)
+        + cast(flag_gdp_contracting       as int)
+        + cast(flag_inflation_elevated    as int)
+        + cast(flag_fed_rate_elevated     as int)
+        + cast(flag_housing_declining     as int)
+        + cast(flag_sentiment_falling     as int)
+        + cast(flag_yield_curve_inverted  as int)
     ) as signal_score,
 
     case
         when (
-            cast(flag_unemployment_rising  as int)
-            + cast(flag_gdp_contracting    as int)
-            + cast(flag_inflation_elevated as int)
-            + cast(flag_fed_rate_elevated  as int)
-            + cast(flag_housing_declining  as int)
-            + cast(flag_sentiment_falling  as int)
-        ) >= 3
+            cast(flag_unemployment_rising     as int)
+            + cast(flag_gdp_contracting       as int)
+            + cast(flag_inflation_elevated    as int)
+            + cast(flag_fed_rate_elevated     as int)
+            + cast(flag_housing_declining     as int)
+            + cast(flag_sentiment_falling     as int)
+            + cast(flag_yield_curve_inverted  as int)
+        ) >= 4
         then true else false
     end as recession_watch
 

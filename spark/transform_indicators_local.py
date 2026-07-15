@@ -28,6 +28,8 @@ INDICATORS = {
     "FEDFUNDS": "fed_funds_rate",
     "HOUST": "housing_starts",
     "UMCSENT": "consumer_sentiment",
+    "GS10": "treasury_10y",
+    "TB3MS": "treasury_3m",
 }
 
 ROLLING_WINDOW = 3
@@ -90,6 +92,10 @@ def run() -> pd.DataFrame:
         wide = featured if wide is None else wide.merge(featured, on="date", how="outer")
 
     wide = wide.sort_values("date").reset_index(drop=True)
+
+    # 10-year minus 3-month Treasury spread -- a negative (inverted) spread
+    # is the single most established recession precursor in macro
+    wide["yield_spread"] = wide["treasury_10y"] - wide["treasury_3m"]
 
     buf = io.BytesIO()
     wide.to_parquet(buf, engine="pyarrow", compression="snappy", index=False)

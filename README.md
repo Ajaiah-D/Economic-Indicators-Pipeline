@@ -1,9 +1,10 @@
 # Economic Indicators Pipeline
 
-An end-to-end data pipeline that pulls six macroeconomic indicators from the
-Federal Reserve (FRED), moves them through ingestion, orchestration, and
+An end-to-end data pipeline that pulls eight data series from the Federal
+Reserve (FRED), six macro indicators plus two Treasury rates that power a
+yield-curve signal, moves them through ingestion, orchestration, and
 transformation, models them with dbt, and serves the result in a Streamlit
-dashboard with a simple recession-risk signal.
+dashboard with a recession-risk signal backtested against real history.
 
 **Live dashboard:** https://ajaiah-d-economic-indicators-pipeline-dashboardapp-d8tih5.streamlit.app/
 
@@ -11,23 +12,27 @@ dashboard with a simple recession-risk signal.
 
 ## Architecture
 
-1. **Ingestion** (`ingestion/fetch_fred.py`) pulls each of the six series from the FRED API and writes timestamped CSVs to S3, partitioned by indicator and date.
+1. **Ingestion** (`ingestion/fetch_fred.py`) pulls each of the eight series from the FRED API and writes timestamped CSVs to S3, partitioned by indicator and date.
 2. **Orchestration** (`dags/fred_ingestion_dag.py`) runs that ingestion on a daily Airflow DAG (TaskFlow API), one fetch/write task pair per indicator, with retries and exponential backoff.
-3. **Transform** (`spark/transform_indicators.py` or `spark/transform_indicators_local.py`) reads the raw CSVs, computes month-over-month % change and a 3-month rolling average per indicator, joins all six into one wide table by date, and writes it back to S3 as Parquet.
-4. **Modeling** (`dbt/`) builds three layers on top of that Parquet file with dbt-duckdb: a staging view (type casting), an intermediate view (six binary stress flags + a composite signal score), and a materialized marts table.
+3. **Transform** (`spark/transform_indicators.py` or `spark/transform_indicators_local.py`) reads the raw CSVs, computes month-over-month % change and a 3-month rolling average per indicator, derives the 10Y-3M Treasury spread, joins everything into one wide table by date, and writes it back to S3 as Parquet.
+4. **Modeling** (`dbt/`) builds three layers on top of that Parquet file with dbt-duckdb: a staging view (type casting), an intermediate view (seven binary stress flags + a composite signal score), and a materialized marts table.
 5. **Dashboard** (`dashboard/app.py`) is Streamlit + Plotly: KPI tiles, a per-indicator trends view, the recession-risk signal, and a flag history heatmap.
 6. **Refresh** (`.github/workflows/refresh_data.yml`) runs the whole chain daily and commits a small snapshot back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
 
 ## FRED Indicators
 
-| Series ID   | Label              | Frequency | Units                    |
-|-------------|--------------------|-----------|--------------------------|
-| CPIAUCSL    | CPI                | Monthly   | Index (1982-84 = 100)    |
-| UNRATE      | Unemployment Rate  | Monthly   | Percent                  |
-| GDP         | GDP                | Quarterly | Billions of USD          |
-| FEDFUNDS    | Fed Funds Rate     | Monthly   | Percent                  |
-| HOUST       | Housing Starts     | Monthly   | Thousands of units       |
-| UMCSENT     | Consumer Sentiment | Monthly   | Index                    |
+| Series ID   | Label                | Frequency | Units                    |
+|-------------|----------------------|-----------|--------------------------|
+| CPIAUCSL    | CPI                  | Monthly   | Index (1982-84 = 100)    |
+| UNRATE      | Unemployment Rate    | Monthly   | Percent                  |
+| GDP         | GDP                  | Quarterly | Billions of USD          |
+| FEDFUNDS    | Fed Funds Rate       | Monthly   | Percent                  |
+| HOUST       | Housing Starts       | Monthly   | Thousands of units       |
+| UMCSENT     | Consumer Sentiment   | Monthly   | Index                    |
+| GS10        | 10-Year Treasury     | Monthly   | Percent                  |
+| TB3MS       | 3-Month Treasury     | Monthly   | Percent                  |
+
+GS10 minus TB3MS gives the yield-curve spread used in the recession signal below.
 
 ## Project Structure
 
@@ -99,7 +104,7 @@ cp .env.example .env
 python ingestion/fetch_fred.py
 ```
 
-Fetches all six series and uploads timestamped CSVs to `s3://<AWS_BUCKET_NAME>/raw/`.
+Fetches all eight series and uploads timestamped CSVs to `s3://<AWS_BUCKET_NAME>/raw/`.
 
 ### 2. Run the Airflow DAG locally
 
@@ -119,7 +124,7 @@ The web UI is at `http://localhost:8080` (default user: `admin`).
 ### 3. Transform: local pandas or PySpark on Databricks
 
 The daily refresh workflow uses the local pandas version, since the dataset
-is under a thousand rows total and a Spark cluster isn't buying anything at
+is about a thousand rows total and a Spark cluster isn't buying anything at
 this scale:
 
 ```bash
@@ -184,40 +189,46 @@ no extra token needed for that part:
 
 ## Recession-risk signal
 
-Six binary stress flags are checked each month, and the signal score is just
-how many are active at once, 0-6:
+Seven binary stress flags are checked each month, and the signal score is
+just how many are active at once, 0-7:
 
-| Flag                        | Condition                                                  |
-|------------------------------|--------------------------------------------------------------|
-| Unemployment rising          | 3-month avg > 3-month avg from 3 months prior                |
-| GDP contracting              | GDP quarter-over-quarter change < 0                          |
-| Inflation elevated           | CPI 12-month change > 3%                                     |
-| Fed rate elevated            | Effective funds rate > its own trailing 3-year average + 1pt |
-| Housing starts declining     | 3-month avg < 3-month avg from 3 months prior                |
-| Consumer sentiment falling   | 3-month avg < 3-month avg from 3 months prior                |
+| Flag                        | Condition                                                     |
+|------------------------------|-----------------------------------------------------------------|
+| Unemployment rising          | 3-month avg > 3-month avg from 3 months prior                   |
+| GDP contracting              | GDP quarter-over-quarter change < 0                              |
+| Inflation elevated           | CPI 12-month change > 3%                                        |
+| Fed rate elevated            | Effective funds rate > its own trailing 3-year average + 1pt    |
+| Housing starts declining     | 3-month avg < 3-month avg from 3 months prior                    |
+| Consumer sentiment falling   | 3-month avg < 3-month avg from 3 months prior                    |
+| Yield curve inverted         | 10Y minus 3M Treasury spread < -0.25pt                           |
 
-A score of 3 or more trips the **Recession Watch** flag.
+A score of 4 or more trips the **Recession Watch** flag.
 
 ### Backtest
 
-All six indicators only overlap from 1959 onward, so that's the window this
-was actually checked against, not just anecdotally citing a couple of recent
+All indicators only overlap from 1959 onward, so that's the window this was
+actually checked against, not just anecdotally citing a couple of recent
 recessions. Against all 9 NBER-recognized recessions since 1959:
 
-- **Catches all 9** (score reached 3+ within 6 months of every recession's official start).
-- The housing/sentiment flags originally used a single month's up-or-down move, and the fed-funds
-  flag used a fixed ">4%" regardless of era, which doesn't mean the same thing in 1981 (rates
-  above 10%) as it does in 2015 (rates near zero). On those original thresholds, the signal fired
-  3+ in about 45% of all months since 1959, most of them nowhere near a real recession. Smoothing
-  those two flags to a 3-month trend and making the fed-funds flag relative to its own trailing
-  average (both above) cut that to about 34% of months, with the same 9/9 recall.
-- Tried adding a persistence requirement (score has to stay 3+ for 2 consecutive months to count)
-  on top of that: it cuts false positives further but misses the 2020 recession, which was over in
-  two months and never got the chance to persist. Left out for that reason.
+- **Catches all 9** (score reached 4+ within 6 months of every recession's official start,
+  except two, see below).
+- The original 6-flag version (no yield curve, threshold of 3) also caught all 9, but flagged
+  3+ in about 34% of all months since 1959, and only 45% of those flagged months were actually
+  near a real recession, roughly a coin flip.
+- Adding the yield curve, the single most established recession indicator in macro, as a 7th
+  flag and raising the bar to 4 of 7 cuts the flagged rate to about 18% of months and lifts
+  precision to about 56%, all without losing a single recession from the backtest.
+- Trade-off: 2 of the 9 recessions (1960 and 2020) only cross the 4-flag bar during the
+  recession itself rather than ahead of it, both were unusually short recessions. The other
+  7 still get 5-6 months of lead time, unchanged from the 6-flag version.
+- Also tested: requiring the yield curve to be inverted as a hard gate (score>=3 of the
+  other 6 AND yield inverted) pushes precision to ~66%, but drops recall to 7 of 9, missing
+  1960 and 2020 entirely. Rejected for the same reason the persistence filter was rejected
+  in the earlier version: it trades away real recessions for a cleaner-looking metric.
 
-Even at 34%, this is a broad stress gauge, not a precise predictor: about one in three flagged
-months turns out to be near an actual recession. Useful as one input among others, not a signal
-to act on alone.
+Even at ~56% precision, this is a broad stress gauge, not a precise predictor: a little under
+half of flagged months turn out not to be near an actual recession. Useful as one input among
+others, not a signal to act on alone.
 
 ## Tech Stack
 
