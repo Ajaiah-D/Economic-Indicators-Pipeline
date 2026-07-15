@@ -1,70 +1,22 @@
-# Economic Indicators Data Engineering Pipeline
+# Economic Indicators Pipeline
 
-A production-style end-to-end pipeline that ingests live macroeconomic data from
-the Federal Reserve Economic Data (FRED) API, orchestrates it with Apache Airflow,
-transforms it with PySpark on Databricks, models it with dbt, and surfaces insights
-in a Streamlit dashboard.
+An end-to-end data pipeline that pulls six macroeconomic indicators from the
+Federal Reserve (FRED), moves them through ingestion, orchestration, and
+transformation, models them with dbt, and serves the result in a Streamlit
+dashboard with a simple recession-risk signal.
+
+**Live dashboard:** https://ajaiah-d-economic-indicators-pipeline-dashboardapp-d8tih5.streamlit.app/
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         FRED API (St. Louis Fed)                    │
-│  CPI · Unemployment · GDP · Fed Funds Rate · Housing Starts · Sent. │
-└───────────────────────────┬─────────────────────────────────────────┘
-                            │  fredapi (Python)
-                            ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│                    Ingestion  (ingestion/fetch_fred.py)               │
-│  • Authenticates with FRED API key                                    │
-│  • Fetches each series as a timestamped DataFrame                     │
-│  • Writes CSV to s3://<bucket>/raw/<label>/<date>/<series_id>.csv    │
-└───────────────────────────┬───────────────────────────────────────────┘
-                            │  boto3
-                            ▼
-                  ┌─────────────────┐
-                  │   AWS S3 (raw)  │
-                  └────────┬────────┘
-                           │  Airflow schedules daily
-                           ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│             Apache Airflow DAG  (dags/fred_ingestion_dag.py)         │
-│  • TaskFlow API (@dag / @task)                                        │
-│  • One fetch + one write task per indicator (6 branches)             │
-│  • Daily schedule · retry logic · email-on-failure stubs             │
-└───────────────────────────┬───────────────────────────────────────────┘
-                            │  triggers PySpark job
-                            ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│         PySpark / Databricks  (spark/transform_indicators.py)        │
-│  • Reads raw CSVs from S3                                             │
-│  • Casts types, computes MoM % change, 3-month rolling avg           │
-│  • Full outer joins all six indicators by date into wide table        │
-│  • Writes Parquet to s3://<bucket>/processed/economic_indicators/    │
-└───────────────────────────┬───────────────────────────────────────────┘
-                            │  processed Parquet
-                            ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│                    dbt  (dbt/)                                        │
-│  staging/  stg_fred_indicators      – type casting & column contract │
-│  intermediate/ int_indicator_trends – trend flags & signal scoring   │
-│  marts/    economic_dashboard       – final table (materialized)     │
-└───────────────────────────┬───────────────────────────────────────────┘
-                            │  mart Parquet / Snowflake table
-                            ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│               Streamlit Dashboard  (dashboard/app.py)                │
-│  • Date-range slider, multi-indicator selector                        │
-│  • KPI cards with MoM delta                                           │
-│  • Line charts: raw / MoM % / 3-month rolling avg                    │
-│  • Signal score gauge + active flag list                              │
-│  • Flag history heatmap                                               │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
----
+1. **Ingestion** (`ingestion/fetch_fred.py`) pulls each of the six series from the FRED API and writes timestamped CSVs to S3, partitioned by indicator and date.
+2. **Orchestration** (`dags/fred_ingestion_dag.py`) runs that ingestion on a daily Airflow DAG (TaskFlow API), one fetch/write task pair per indicator, with retries and exponential backoff.
+3. **Transform** (`spark/transform_indicators.py` or `spark/transform_indicators_local.py`) reads the raw CSVs, computes month-over-month % change and a 3-month rolling average per indicator, joins all six into one wide table by date, and writes it back to S3 as Parquet.
+4. **Modeling** (`dbt/`) builds three layers on top of that Parquet file with dbt-duckdb: a staging view (type casting), an intermediate view (six binary stress flags + a composite signal score), and a materialized marts table.
+5. **Dashboard** (`dashboard/app.py`) is Streamlit + Plotly: KPI tiles, a per-indicator trends view, the recession-risk signal, and a flag history heatmap.
+6. **Refresh** (`.github/workflows/refresh_data.yml`) runs the whole chain daily and commits a small snapshot back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
 
 ## FRED Indicators
 
@@ -77,236 +29,185 @@ in a Streamlit dashboard.
 | HOUST       | Housing Starts     | Monthly   | Thousands of units       |
 | UMCSENT     | Consumer Sentiment | Monthly   | Index                    |
 
----
-
 ## Project Structure
 
 ```
-fred-pipeline/
-├── dags/
-│   └── fred_ingestion_dag.py      Airflow DAG (TaskFlow API)
+Economic-Indicators-Pipeline/
 ├── ingestion/
-│   └── fetch_fred.py              FRED → S3 ingestion
+│   └── fetch_fred.py                  FRED -> S3 ingestion
+├── dags/
+│   └── fred_ingestion_dag.py          Airflow DAG (TaskFlow API)
 ├── spark/
-│   └── transform_indicators.py   PySpark feature engineering
+│   ├── transform_indicators.py        PySpark version, for a Databricks cluster
+│   └── transform_indicators_local.py  pandas equivalent, used by the daily refresh
 ├── dbt/
 │   ├── dbt_project.yml
+│   ├── profiles.yml
 │   └── models/
-│       ├── staging/
-│       │   └── stg_fred_indicators.sql
-│       ├── intermediate/
-│       │   └── int_indicator_trends.sql
-│       └── marts/
-│           └── economic_dashboard.sql
+│       ├── staging/stg_fred_indicators.sql
+│       ├── intermediate/int_indicator_trends.sql
+│       └── marts/economic_dashboard.sql
 ├── dashboard/
-│   └── app.py                     Streamlit dashboard
+│   └── app.py                         Streamlit dashboard
+├── scripts/
+│   └── export_dashboard_snapshot.py   dbt output -> committed Parquet snapshot
+├── data/
+│   ├── economic_dashboard.parquet     committed snapshot, refreshed daily
+│   └── last_updated.json
+├── .github/workflows/
+│   └── refresh_data.yml               daily ingest -> transform -> dbt -> snapshot
 ├── .env.example
-├── requirements.txt
-└── README.md
+├── requirements.txt                   dashboard runtime only
+└── requirements-pipeline.txt          full pipeline (Airflow, PySpark, dbt)
 ```
-
----
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.11+
-- An AWS account with an S3 bucket and an IAM user with `s3:GetObject` / `s3:PutObject`
+- Python 3.12 (Airflow and PySpark don't support the newest Python releases)
+- An AWS account with an S3 bucket and an IAM user scoped to that bucket (`s3:GetObject` / `s3:PutObject` / `s3:ListBucket`)
 - A FRED API key (free at [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html))
-- Databricks Community Edition account (for the Spark step)
 
 ### 1. Clone and install dependencies
 
 ```bash
 git clone <repo-url>
-cd fred-pipeline
+cd Economic-Indicators-Pipeline
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# Full pipeline (ingestion, Airflow, dbt, dashboard). Use a Python 3.12
-# venv -- Airflow/PySpark/dbt do not support the newest Python releases.
 pip install -r requirements-pipeline.txt
 ```
 
-`requirements.txt` (the file Streamlit Community Cloud installs) is a slim
-runtime for the **dashboard only** -- it deliberately omits Airflow, PySpark,
-and dbt so the hosted app builds quickly. Use `requirements-pipeline.txt` for
-full local development.
+`requirements.txt` is the slim runtime Streamlit Community Cloud installs for
+the dashboard alone, deliberately skipping Airflow, PySpark, and dbt so the
+hosted build stays fast. Use `requirements-pipeline.txt` for full local
+development.
 
 ### 2. Configure credentials
 
 ```bash
 cp .env.example .env
-# Edit .env and fill in FRED_API_KEY, AWS_*, etc.
+# fill in FRED_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET_NAME, AWS_REGION
 ```
 
----
+## Running each stage
 
-## How to Run Each Stage
-
-### Stage 1: Ingest from FRED to S3
+### 1. Ingest from FRED to S3
 
 ```bash
 python ingestion/fetch_fred.py
 ```
 
-Fetches all six series and uploads timestamped CSVs to
-`s3://<AWS_BUCKET_NAME>/raw/`.
+Fetches all six series and uploads timestamped CSVs to `s3://<AWS_BUCKET_NAME>/raw/`.
 
----
+### 2. Run the Airflow DAG locally
 
-### Stage 2: Run the Airflow DAG locally
+Apache Airflow doesn't run natively on Windows; use WSL2 or a Linux/Mac shell.
 
 ```bash
-# Initialise the Airflow SQLite DB and start the web server + scheduler
 export AIRFLOW_HOME=$(pwd)/airflow-home
 airflow standalone
 
-# In a second terminal, trigger the DAG manually
+# in a second terminal
 airflow dags trigger fred_economic_ingestion
-
-# Watch progress
 airflow dags list-runs -d fred_economic_ingestion
 ```
 
-The web UI is available at `http://localhost:8080` (default user: `admin`).
+The web UI is at `http://localhost:8080` (default user: `admin`).
 
----
+### 3. Transform: local pandas or PySpark on Databricks
 
-### Stage 3: PySpark transformation on Databricks
+The daily refresh workflow uses the local pandas version, since the dataset
+is under a thousand rows total and a Spark cluster isn't buying anything at
+this scale:
 
-1. Log in to [Databricks Community Edition](https://community.cloud.databricks.com).
-2. Create a cluster (any runtime >= 13.3 LTS).
-3. Upload `spark/transform_indicators.py` to your workspace.
-4. Set the following environment variables in the cluster configuration
-   (Cluster -> Edit -> Environment Variables):
-
-   ```
-   AWS_ACCESS_KEY_ID=...
-   AWS_SECRET_ACCESS_KEY=...
-   AWS_BUCKET_NAME=...
-   AWS_REGION=us-east-1
-   ```
-
-5. Create a notebook, attach it to the cluster, and run:
-
-   ```python
-   %run ./transform_indicators
-   ```
-
-   Or submit via `spark-submit` for local testing:
-
-   ```bash
-   spark-submit spark/transform_indicators.py
-   ```
-
-Output is written to `s3://<bucket>/processed/economic_indicators/` as
-Snappy-compressed Parquet.
-
----
-
-### Stage 4: Run dbt models
-
-For **local testing with dbt-duckdb**, add a profile to `~/.dbt/profiles.yml`:
-
-```yaml
-fred_pipeline:
-  target: dev
-  outputs:
-    dev:
-      type: duckdb
-      path: dbt/target/fred_pipeline.duckdb
-      extensions:
-        - httpfs
-      settings:
-        s3_access_key_id: "{{ env_var('AWS_ACCESS_KEY_ID') }}"
-        s3_secret_access_key: "{{ env_var('AWS_SECRET_ACCESS_KEY') }}"
-        s3_region: "{{ env_var('AWS_REGION', 'us-east-1') }}"
+```bash
+python spark/transform_indicators_local.py
 ```
 
-Then run:
+`spark/transform_indicators.py` is the PySpark equivalent, written for a
+larger dataset running on an actual Databricks cluster (Databricks Free
+Edition dropped support for all-purpose clusters, so it now needs a Unity
+Catalog external location to reach S3 rather than a simple access key).
+Either way, the output lands at `s3://<bucket>/processed/economic_indicators/`.
+
+### 4. Run dbt models
+
+dbt reads the S3 Parquet directly through dbt-duckdb's `httpfs` extension.
+`dbt/profiles.yml` is already checked in and only references environment
+variables, so no manual profile setup is needed:
 
 ```bash
 cd dbt
-dbt deps
 dbt run
 dbt test
 ```
 
-For **Databricks**, swap the profile to `dbt-spark` and point it at your cluster.
+### 5. Export the dashboard snapshot
 
----
+```bash
+python scripts/export_dashboard_snapshot.py
+```
 
-### Stage 5: Launch the Streamlit dashboard
+Copies the dbt marts table to `data/economic_dashboard.parquet` and writes
+`data/last_updated.json` (timestamp, row count, date range). This is the
+file a deployed dashboard actually reads.
+
+### 6. Launch the dashboard
 
 ```bash
 streamlit run dashboard/app.py
 ```
 
-The dashboard loads data in this priority order:
-1. `dbt/target/economic_dashboard.parquet` (fastest, local dbt-duckdb output)
-2. `data/economic_dashboard.parquet` (the committed snapshot, see below)
-3. S3 Parquet (via boto3; set `AWS_*` env vars)
-4. Synthetic demo data (no backend required, great for UI previews)
+Data loads in this order: a local dbt build, then the committed snapshot,
+then S3 (if `AWS_*` env vars are set), then synthetic demo data as a last
+resort so the UI is still browsable with zero setup.
 
----
+## Automated daily refresh
 
-### Automated daily refresh (GitHub Actions)
+`.github/workflows/refresh_data.yml` runs steps 1, 3, 4, and 5 above on a
+schedule (12:00 UTC daily, plus manual `workflow_dispatch`) and commits the
+result back to the repo, only if the data actually changed. This is what
+keeps the deployed dashboard current without it ever needing AWS credentials
+at deploy time; it just reads the committed snapshot.
 
-`.github/workflows/refresh_data.yml` runs the full pipeline (ingest, transform, dbt run,
-export) on a schedule and commits the result back to the repo at
-`data/economic_dashboard.parquet` and `data/last_updated.json`, only if the data actually
-changed. This is what keeps a deployed dashboard (e.g. Streamlit Community Cloud) showing
-current data without needing AWS credentials at deploy time, since it just reads the
-committed snapshot.
+**One-time setup:** add these as repository secrets (Settings → Secrets and
+variables → Actions). The workflow pushes with the default `GITHUB_TOKEN`,
+no extra token needed for that part:
 
-It runs daily at 12:00 UTC and can also be triggered manually from the Actions tab
-(`workflow_dispatch`).
-
-**One-time setup:** add these as repository secrets (Settings -> Secrets and variables ->
-Actions -> New repository secret). The workflow uses the default `GITHUB_TOKEN` to push,
-no separate token needed for that part:
 - `FRED_API_KEY`
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 - `AWS_BUCKET_NAME`
 - `AWS_REGION`
 
----
+## Recession-risk signal
 
-## Key Findings & Economic Signal Logic
+Six binary stress flags are checked each month, and the signal score is just
+how many are active at once, 0–6:
 
-The pipeline computes a **signal score (0-6)** by counting how many of the
-following stress conditions are simultaneously active on any given month:
+| Flag                       | Condition                                     |
+|-----------------------------|------------------------------------------------|
+| Unemployment rising         | 3-month avg > 3-month avg from 3 months prior  |
+| GDP contracting             | GDP MoM % change < 0                          |
+| Inflation elevated          | CPI 12-month change > 3%                      |
+| Fed rate elevated           | Effective funds rate > 4%                     |
+| Housing starts declining    | Housing starts MoM % change < 0               |
+| Consumer sentiment falling  | Sentiment MoM % change < 0                    |
 
-| Flag                      | Condition                                         |
-|---------------------------|---------------------------------------------------|
-| Unemployment Rising       | 3-month avg > 3-month avg from 3 months prior     |
-| GDP Contracting           | GDP MoM % change < 0                             |
-| Inflation Elevated        | CPI 12-month change > 3%                         |
-| Fed Rate Elevated         | Effective funds rate > 4%                        |
-| Housing Starts Declining  | Housing starts MoM % change < 0                 |
-| Consumer Sentiment Falling| Sentiment MoM % change < 0                      |
-
-A score >= 3 triggers the **Recession Watch** flag, a heuristic inspired by
-the simultaneous deterioration seen ahead of the 2008 and 2020 downturns.
-
-> **Placeholder for extended analysis:** After connecting live FRED data, add
-> a write-up here describing which signals fired in the most recent 12 months,
-> how the current signal score compares to historical recessions, and any
-> indicator divergences worth monitoring (e.g., persistent inflation while
-> unemployment remains low, a stagflation setup).
-
----
+A score of 3 or more trips the **Recession Watch** flag, a heuristic based on
+the simultaneous deterioration seen ahead of the 2008 and 2020 downturns,
+not a forecast.
 
 ## Tech Stack
 
-| Layer         | Technology                                    |
-|---------------|-----------------------------------------------|
-| Ingestion     | Python, fredapi, boto3, python-dotenv         |
-| Orchestration | Apache Airflow 2.9 (TaskFlow API)             |
-| Processing    | PySpark 3.5, Databricks Community Edition     |
-| Modeling      | dbt-core, dbt-duckdb (dev) / dbt-spark (prod) |
-| Storage       | AWS S3 (raw CSV + processed Parquet)          |
-| Visualization | Streamlit, Plotly                             |
+| Layer         | Technology                                       |
+|---------------|---------------------------------------------------|
+| Ingestion     | Python, fredapi, boto3                            |
+| Orchestration | Apache Airflow 2.9 (TaskFlow API)                 |
+| Transform     | pandas (default) or PySpark 3.5 on Databricks     |
+| Modeling      | dbt-core + dbt-duckdb                             |
+| Storage       | AWS S3 (raw CSV + processed Parquet)              |
+| Dashboard     | Streamlit, Plotly                                 |
+| Automation    | GitHub Actions (daily refresh)                    |
