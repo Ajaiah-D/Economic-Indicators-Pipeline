@@ -108,7 +108,8 @@ def inject_css() -> None:
             padding-bottom: 3rem;
             max-width: 1240px;
         }}
-        #MainMenu, header[data-testid="stHeader"], footer {{ visibility: hidden; }}
+        footer {{ visibility: hidden; }}
+        header[data-testid="stHeader"] {{ background: transparent; }}
         h1, h2, h3 {{ font-family: {FONT}; letter-spacing: -0.02em; }}
 
         .hero-title {{
@@ -613,23 +614,46 @@ def footer() -> None:
 # --------------------------------------------------------------------------- #
 # Sidebar + main
 # --------------------------------------------------------------------------- #
+# quick ranges are anchored to the newest date in the data, not today --
+# FRED series trail the calendar by weeks, so "last 6 months" should mean
+# the 6 months ending at the last observation.
+RANGE_PRESETS = {"6M": 6, "1Y": 12, "2Y": 24, "5Y": 60, "10Y": 120, "All": None}
+
+
 def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     st.sidebar.markdown('<div class="section-label">Filters</div>', unsafe_allow_html=True)
 
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
 
-    date_range = st.sidebar.date_input(
+    choice = st.sidebar.segmented_control(
         "Date range",
-        value=(max(min_date, date(2015, 1, 1)), max_date),
-        min_value=min_date,
-        max_value=max_date,
+        options=list(RANGE_PRESETS) + ["Custom"],
+        default="10Y",
     )
-    if len(date_range) == 2:
-        start, end = date_range
-    else:
-        start, end = date_range[0], max_date
+    if not choice:  # segmented control deselects on second click
+        choice = "All"
 
+    if choice == "Custom":
+        date_range = st.sidebar.date_input(
+            "Custom range",
+            value=(max(min_date, date(2015, 1, 1)), max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
+        if len(date_range) == 2:
+            start, end = date_range
+        else:
+            start, end = date_range[0], max_date
+    else:
+        end = max_date
+        months = RANGE_PRESETS[choice]
+        if months is None:
+            start = min_date
+        else:
+            start = max(min_date, (pd.Timestamp(end) - pd.DateOffset(months=months)).date())
+
+    st.sidebar.caption(f"Showing {start:%b %Y} – {end:%b %Y}")
     st.sidebar.write("")
     selected = st.sidebar.multiselect(
         "Indicators",
