@@ -238,8 +238,32 @@ streamlit run dashboard/app.py
 
 The dashboard loads data in this priority order:
 1. `dbt/target/economic_dashboard.parquet` (fastest, local dbt-duckdb output)
-2. S3 Parquet (via boto3; set `AWS_*` env vars)
-3. Synthetic demo data (no backend required, great for UI previews)
+2. `data/economic_dashboard.parquet` (the committed snapshot, see below)
+3. S3 Parquet (via boto3; set `AWS_*` env vars)
+4. Synthetic demo data (no backend required, great for UI previews)
+
+---
+
+### Automated daily refresh (GitHub Actions)
+
+`.github/workflows/refresh_data.yml` runs the full pipeline (ingest, transform, dbt run,
+export) on a schedule and commits the result back to the repo at
+`data/economic_dashboard.parquet` and `data/last_updated.json`, only if the data actually
+changed. This is what keeps a deployed dashboard (e.g. Streamlit Community Cloud) showing
+current data without needing AWS credentials at deploy time, since it just reads the
+committed snapshot.
+
+It runs daily at 12:00 UTC and can also be triggered manually from the Actions tab
+(`workflow_dispatch`).
+
+**One-time setup:** add these as repository secrets (Settings -> Secrets and variables ->
+Actions -> New repository secret). The workflow uses the default `GITHUB_TOKEN` to push,
+no separate token needed for that part:
+- `FRED_API_KEY`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_BUCKET_NAME`
+- `AWS_REGION`
 
 ---
 
