@@ -1,24 +1,28 @@
 import io
+import json
 import os
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
+from plotly.subplots import make_subplots
 
 load_dotenv()
 
 st.set_page_config(
-    page_title="Economic Indicators Dashboard",
+    page_title="U.S. Economic Indicators",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-LOCAL_DBT_PARQUET = Path(__file__).parent.parent / "dbt" / "target" / "economic_dashboard.parquet"
-LOCAL_SNAPSHOT_PARQUET = Path(__file__).parent.parent / "data" / "economic_dashboard.parquet"
+REPO_ROOT = Path(__file__).parent.parent
+LOCAL_DBT_PARQUET = REPO_ROOT / "dbt" / "target" / "economic_dashboard.parquet"
+LOCAL_SNAPSHOT_PARQUET = REPO_ROOT / "data" / "economic_dashboard.parquet"
+LAST_UPDATED_JSON = REPO_ROOT / "data" / "last_updated.json"
 S3_PARQUET_KEY = "processed/economic_indicators"
 
 FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -27,23 +31,24 @@ FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 INK_PRIMARY = "#0b0b0b"
 INK_SECONDARY = "#52514e"
 INK_MUTED = "#898781"
-GRIDLINE = "#e1e0d9"
-SURFACE = "#fcfcfb"
+GRIDLINE = "#e8e7e1"
+SURFACE = "#ffffff"
+PAGE = "#f7f6f3"
 
 STATUS = {
     "good": "#0ca30c",
-    "warning": "#fab219",
+    "warning": "#e0940a",
     "serious": "#ec835a",
     "critical": "#d03b3b",
 }
 
 INDICATOR_META = {
-    "cpi":                {"label": "CPI",                "unit": "Index (1982-84=100)", "color": "#2a78d6"},
-    "unemployment_rate":  {"label": "Unemployment Rate",  "unit": "%",                   "color": "#1baf7a"},
-    "gdp":                {"label": "GDP",                "unit": "Billions USD",        "color": "#c98500"},
-    "fed_funds_rate":     {"label": "Fed Funds Rate",     "unit": "%",                   "color": "#008300"},
-    "housing_starts":     {"label": "Housing Starts",     "unit": "Thousands of Units",  "color": "#4a3aa7"},
-    "consumer_sentiment": {"label": "Consumer Sentiment", "unit": "Index",               "color": "#e34948"},
+    "cpi":                {"label": "CPI",                "short": "CPI",        "unit": "Index (1982-84=100)", "fmt": "{:,.1f}", "color": "#2a78d6"},
+    "unemployment_rate":  {"label": "Unemployment Rate",  "short": "Unemp.",     "unit": "%",                   "fmt": "{:,.1f}%", "color": "#1baf7a"},
+    "gdp":                {"label": "GDP",                "short": "GDP",        "unit": "Billions USD",        "fmt": "${:,.0f}B", "color": "#c98500"},
+    "fed_funds_rate":     {"label": "Fed Funds Rate",     "short": "Fed Funds",  "unit": "%",                   "fmt": "{:,.2f}%", "color": "#008300"},
+    "housing_starts":     {"label": "Housing Starts",     "short": "Housing",    "unit": "Thousands of units",  "fmt": "{:,.0f}K", "color": "#4a3aa7"},
+    "consumer_sentiment": {"label": "Consumer Sentiment", "short": "Sentiment",  "unit": "Index",               "fmt": "{:,.1f}", "color": "#e34948"},
 }
 
 FLAG_DESCRIPTIONS = {
@@ -54,6 +59,10 @@ FLAG_DESCRIPTIONS = {
     "flag_housing_declining":   "Housing starts declining",
     "flag_sentiment_falling":   "Consumer sentiment falling",
 }
+
+# monthly level series -- a month is "complete" once these have published. GDP
+# is quarterly and publishes late, so it's deliberately not in this list.
+MONTHLY_CORE = ["cpi", "unemployment_rate", "housing_starts", "consumer_sentiment"]
 
 KPI_TILES_PER_ROW = 3
 
@@ -85,89 +94,121 @@ GLOSSARY = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# Styling
+# --------------------------------------------------------------------------- #
 def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        html, body, [class*="css"] {{
-            font-family: {FONT};
-        }}
+        .stApp {{ background: {PAGE}; }}
+        html, body, [class*="css"] {{ font-family: {FONT}; }}
         .block-container {{
-            padding-top: 2.25rem;
+            padding-top: 2.4rem;
             padding-bottom: 3rem;
-            max-width: 1200px;
+            max-width: 1240px;
         }}
-        h1, h2, h3 {{
-            font-family: {FONT};
-            letter-spacing: -0.01em;
-        }}
-        .app-title {{
-            font-size: 1.9rem;
-            font-weight: 650;
+        #MainMenu, header[data-testid="stHeader"], footer {{ visibility: hidden; }}
+        h1, h2, h3 {{ font-family: {FONT}; letter-spacing: -0.02em; }}
+
+        .hero-title {{
+            font-size: 2.15rem;
+            font-weight: 680;
             color: {INK_PRIMARY};
-            margin-bottom: 0.15rem;
+            margin-bottom: 0.2rem;
+            line-height: 1.1;
         }}
-        .app-caption {{
+        .hero-sub {{
             color: {INK_SECONDARY};
-            font-size: 0.92rem;
-            margin-bottom: 1.6rem;
+            font-size: 0.98rem;
+            margin-bottom: 0.55rem;
         }}
+        .hero-meta {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: {INK_MUTED};
+            font-size: 0.82rem;
+        }}
+        .live-dot {{
+            width: 7px; height: 7px; border-radius: 50%;
+            background: {STATUS['good']}; display: inline-block;
+            box-shadow: 0 0 0 3px {STATUS['good']}22;
+        }}
+
         .section-label {{
-            font-size: 0.78rem;
-            font-weight: 600;
-            letter-spacing: 0.06em;
+            font-size: 0.76rem;
+            font-weight: 650;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
             color: {INK_MUTED};
-            margin: 0 0 0.6rem 0;
+            margin: 0.2rem 0 0.7rem 0;
+        }}
+
+        /* bordered stat-tile containers */
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
+            background: {SURFACE};
+            border-radius: 14px;
         }}
         div[data-testid="stMetric"] {{
-            background: {SURFACE};
-            border: 1px solid rgba(11,11,11,0.08);
-            border-radius: 10px;
-            padding: 0.85rem 1rem 0.6rem 1rem;
+            background: transparent;
+            border: none;
+            padding: 0.1rem 0.2rem 0 0.2rem;
         }}
-        div[data-testid="stMetricLabel"] {{
+        div[data-testid="stMetricLabel"] p {{
+            font-size: 0.86rem;
+            font-weight: 600;
             color: {INK_SECONDARY};
         }}
         div[data-testid="stMetricValue"] {{
+            font-size: 1.9rem;
+            font-weight: 640;
             color: {INK_PRIMARY};
         }}
-        hr {{
-            border-color: {GRIDLINE};
+        .tile-asof {{
+            font-size: 0.72rem;
+            color: {INK_MUTED};
+            margin: 0.1rem 0 0.2rem 0.2rem;
         }}
+
+        /* signal banner */
+        .banner {{
+            border-radius: 16px;
+            padding: 1.25rem 1.4rem;
+            border: 1px solid rgba(11,11,11,0.06);
+            box-shadow: 0 1px 2px rgba(11,11,11,0.04);
+        }}
+        .banner-score {{ font-size: 3.4rem; font-weight: 680; line-height: 1; }}
+        .banner-score small {{ font-size: 1.3rem; color: {INK_MUTED}; font-weight: 500; }}
         .status-pill {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.28rem 0.75rem;
-            border-radius: 999px;
-            font-size: 0.82rem;
-            font-weight: 600;
+            display: inline-flex; align-items: center; gap: 0.45rem;
+            padding: 0.3rem 0.85rem; border-radius: 999px;
+            font-size: 0.86rem; font-weight: 650;
         }}
-        .status-dot {{
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-        }}
+        .status-dot {{ width: 9px; height: 9px; border-radius: 50%; display: inline-block; }}
         .flag-chip {{
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            padding: 0.35rem 0;
-            font-size: 0.92rem;
-            color: {INK_PRIMARY};
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.4rem 0.7rem; margin: 0 0.4rem 0.4rem 0;
+            background: {SURFACE}; border: 1px solid rgba(208,59,59,0.25);
+            border-radius: 8px; font-size: 0.88rem; color: {INK_PRIMARY};
         }}
-        .flag-chip-dot {{
-            width: 8px;
-            height: 8px;
-            min-width: 8px;
-            border-radius: 50%;
-            background: {STATUS['critical']};
+        .flag-chip-dot {{ width: 7px; height: 7px; border-radius: 50%; background: {STATUS['critical']}; }}
+        .all-clear {{
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.4rem 0.75rem; background: {SURFACE};
+            border: 1px solid rgba(12,163,12,0.28); border-radius: 8px;
+            font-size: 0.9rem; color: {INK_PRIMARY};
         }}
-        .no-flags {{
-            color: {INK_SECONDARY};
-            font-size: 0.92rem;
+
+        .footer {{
+            margin-top: 2.5rem; padding-top: 1rem;
+            border-top: 1px solid {GRIDLINE};
+            color: {INK_MUTED}; font-size: 0.8rem;
+            display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+        }}
+        .footer a {{ color: {INK_SECONDARY}; text-decoration: none; }}
+        div[data-testid="stExpander"] details {{
+            border: 1px solid {GRIDLINE}; border-radius: 12px; background: {SURFACE};
         }}
         </style>
         """,
@@ -175,6 +216,9 @@ def inject_css() -> None:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Data
+# --------------------------------------------------------------------------- #
 @st.cache_data(ttl=3600, show_spinner="Loading economic data...")
 def load_data() -> pd.DataFrame:
     # a local dbt build takes priority (a dev who just ran `dbt run` sees
@@ -201,8 +245,17 @@ def load_data() -> pd.DataFrame:
         df["date"] = pd.to_datetime(df["date"])
         return df.sort_values("date")
 
-    # no backend wired up yet -- generate synthetic data so the UI is still usable
     return _demo_data()
+
+
+@st.cache_data(ttl=3600)
+def load_metadata() -> dict:
+    if LAST_UPDATED_JSON.exists():
+        try:
+            return json.loads(LAST_UPDATED_JSON.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
 
 
 def _demo_data() -> pd.DataFrame:
@@ -239,12 +292,24 @@ def _demo_data() -> pd.DataFrame:
     return df
 
 
+def latest_complete_row(df: pd.DataFrame) -> pd.Series:
+    # the signal score is only meaningful for a month whose monthly indicators
+    # have actually published. Reading the raw last row shows an artificially
+    # calm score because the newest month is still half-empty (publish lag).
+    complete = df.dropna(subset=[c for c in MONTHLY_CORE if c in df.columns])
+    return complete.iloc[-1] if not complete.empty else df.iloc[-1]
+
+
+# --------------------------------------------------------------------------- #
+# Chart helpers
+# --------------------------------------------------------------------------- #
 def base_layout(fig: go.Figure, height: int) -> go.Figure:
     fig.update_layout(
         height=height,
         font=dict(family=FONT, color=INK_SECONDARY, size=12),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color=INK_SECONDARY)),
-        margin=dict(l=0, r=0, t=30, b=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                    font=dict(color=INK_SECONDARY), bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=0, r=8, t=34, b=0),
         hovermode="x unified",
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -255,8 +320,301 @@ def base_layout(fig: go.Figure, height: int) -> go.Figure:
     return fig
 
 
+def sparkline(df: pd.DataFrame, key: str, color: str) -> go.Figure:
+    tail = df[["date", key]].dropna().tail(24)
+    fig = go.Figure(go.Scatter(
+        x=tail["date"], y=tail[key],
+        mode="lines",
+        line=dict(color=color, width=2, shape="spline"),
+        fill="tozeroy", fillcolor=_rgba(color, 0.08),
+        hoverinfo="skip",
+    ))
+    fig.update_layout(
+        height=48, margin=dict(l=0, r=0, t=2, b=0),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False,
+    )
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False, range=[tail[key].min() * 0.97, tail[key].max() * 1.03] if not tail.empty else None)
+    return fig
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+# --------------------------------------------------------------------------- #
+# Sections
+# --------------------------------------------------------------------------- #
+def header(df: pd.DataFrame, meta: dict) -> None:
+    data_through = df["date"].max()
+    through_str = data_through.strftime("%b %Y") if pd.notna(data_through) else "n/a"
+
+    updated_str = ""
+    ts = meta.get("last_updated_utc")
+    if ts:
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            updated_str = dt.strftime("%b %d, %Y")
+        except ValueError:
+            updated_str = ""
+
+    meta_bits = f"Data through {through_str}"
+    if updated_str:
+        meta_bits += f" &nbsp;·&nbsp; Auto-refreshed daily &nbsp;·&nbsp; Last update {updated_str}"
+
+    st.markdown(
+        f"""
+        <div class="hero-title">U.S. Economic Indicators</div>
+        <div class="hero-sub">Six macro indicators from the Federal Reserve (FRED), with a composite recession-risk signal.</div>
+        <div class="hero-meta"><span class="live-dot"></span>{meta_bits}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.write("")
+
+
+def status_for_score(score: int, recession_watch: bool) -> tuple[str, str]:
+    if recession_watch:
+        return STATUS["critical"], "Recession watch"
+    if score >= 2:
+        return STATUS["warning"], "Elevated risk"
+    return STATUS["good"], "Stable"
+
+
+def signal_banner(df: pd.DataFrame) -> None:
+    row = latest_complete_row(df)
+    score = int(row.get("signal_score", 0))
+    recession_watch = bool(row.get("recession_watch", False))
+    colour, label = status_for_score(score, recession_watch)
+    as_of = row["date"].strftime("%b %Y") if pd.notna(row["date"]) else ""
+    active = [FLAG_DESCRIPTIONS[f] for f in FLAG_DESCRIPTIONS if bool(row.get(f, False))]
+
+    left, right = st.columns([1, 2.3], gap="medium")
+
+    with left:
+        st.markdown(
+            f"""
+            <div class="banner" style="background:{_rgba(colour, 0.06)}; border-color:{_rgba(colour, 0.25)};">
+                <div style="color:{INK_MUTED}; font-size:0.76rem; font-weight:650; letter-spacing:0.08em; text-transform:uppercase;">Recession-risk signal</div>
+                <div class="banner-score" style="color:{INK_PRIMARY}; margin-top:0.35rem;">{score}<small>/6</small></div>
+                <div style="margin-top:0.6rem;">
+                    <span class="status-pill" style="background:{_rgba(colour, 0.14)}; color:{colour};">
+                        <span class="status-dot" style="background:{colour};"></span>{label}
+                    </span>
+                </div>
+                <div style="color:{INK_MUTED}; font-size:0.76rem; margin-top:0.7rem;">as of {as_of}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with right:
+        st.markdown('<div class="section-label" style="margin-top:0.2rem;">Active stress signals</div>', unsafe_allow_html=True)
+        if active:
+            chips = "".join(
+                f'<span class="flag-chip"><span class="flag-chip-dot"></span>{f}</span>' for f in active
+            )
+            st.markdown(f"<div>{chips}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f'<span class="all-clear"><span class="status-dot" style="background:{STATUS["good"]};"></span>'
+                'No active stress signals. Conditions appear stable.</span>',
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            f'<div style="color:{INK_MUTED}; font-size:0.8rem; margin-top:0.85rem; line-height:1.5;">'
+            "The score counts how many of six stress conditions are active at once. "
+            "A reading of 3 or more trips the recession-watch threshold, a heuristic based on the "
+            "joint deterioration seen ahead of the 2008 and 2020 downturns (not a forecast).</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _kpi_tile(df: pd.DataFrame, key: str) -> None:
+    # renders directly into the caller's current container context.
+    meta = INDICATOR_META[key]
+    available = df.dropna(subset=[key])
+    if not available.empty:
+        r = available.iloc[-1]
+        mom = r.get(f"{key}_mom_pct")
+        as_of = r["date"].strftime("%b %Y")
+        value_str = meta["fmt"].format(r[key])
+    else:
+        mom = None
+        as_of = ""
+        value_str = "N/A"
+
+    st.metric(
+        label=meta["label"],
+        value=value_str,
+        delta=f"{mom:+.2f}% MoM" if pd.notna(mom) else None,
+    )
+    st.markdown(f'<div class="tile-asof">as of {as_of}</div>', unsafe_allow_html=True)
+    st.plotly_chart(
+        sparkline(df, key, meta["color"]),
+        width="stretch",
+        config={"displayModeBar": False},
+        key=f"spark_{key}",
+    )
+
+
+def kpi_grid(df: pd.DataFrame, selected: list[str]) -> None:
+    st.markdown('<div class="section-label">Latest readings</div>', unsafe_allow_html=True)
+    for row_start in range(0, len(selected), KPI_TILES_PER_ROW):
+        row_keys = selected[row_start:row_start + KPI_TILES_PER_ROW]
+        cols = st.columns(KPI_TILES_PER_ROW, gap="medium")
+        for col, key in zip(cols, row_keys):
+            with col.container(border=True):
+                _kpi_tile(df, key)
+        for col in cols[len(row_keys):]:
+            col.empty()
+
+
+def trends(df: pd.DataFrame, selected: list[str]) -> None:
+    st.markdown('<div class="section-label">Indicator trends</div>', unsafe_allow_html=True)
+    tab_levels, tab_mom = st.tabs(["Levels", "Month-over-month %"])
+
+    with tab_levels:
+        st.caption(
+            "Actual values over the selected range. Each indicator has its own panel and scale, since they "
+            "are measured in very different units (an index, a percent, billions of dollars)."
+        )
+        n = len(selected)
+        cols_n = 1 if n == 1 else 2
+        rows_n = (n + cols_n - 1) // cols_n
+        fig = make_subplots(
+            rows=rows_n, cols=cols_n,
+            subplot_titles=[INDICATOR_META[k]["label"] for k in selected],
+            vertical_spacing=0.16 if rows_n > 1 else 0.1,
+            horizontal_spacing=0.09,
+        )
+        for i, key in enumerate(selected):
+            r, c = i // cols_n + 1, i % cols_n + 1
+            meta = INDICATOR_META[key]
+            s = df[["date", key]].dropna()
+            fig.add_trace(
+                go.Scatter(
+                    x=s["date"], y=s[key], mode="lines", name=meta["label"],
+                    line=dict(color=meta["color"], width=2),
+                    fill="tozeroy", fillcolor=_rgba(meta["color"], 0.06),
+                    hovertemplate=f"%{{x|%b %Y}} &nbsp; %{{y:,.1f}} {meta['unit']}<extra></extra>",
+                ),
+                row=r, col=c,
+            )
+        fig.update_layout(
+            height=210 * rows_n + 30,
+            showlegend=False,
+            font=dict(family=FONT, color=INK_SECONDARY, size=12),
+            margin=dict(l=0, r=8, t=30, b=0),
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            hoverlabel=dict(bgcolor=SURFACE, bordercolor=GRIDLINE, font=dict(family=FONT, color=INK_PRIMARY)),
+        )
+        fig.update_xaxes(showgrid=False, showline=True, linecolor=GRIDLINE, tickfont=dict(color=INK_MUTED, size=11))
+        fig.update_yaxes(showgrid=True, gridcolor=GRIDLINE, zeroline=False, tickfont=dict(color=INK_MUTED, size=11))
+        for ann in fig.layout.annotations:  # subplot titles
+            ann.font.update(size=13, color=INK_PRIMARY)
+            ann.update(x=ann.x, xanchor="center")
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+    with tab_mom:
+        st.caption("Month-over-month percent change. Already on a common scale, so all series share one axis.")
+        fig = go.Figure()
+        for key in selected:
+            col = f"{key}_mom_pct"
+            if col not in df.columns:
+                continue
+            meta = INDICATOR_META[key]
+            s = df[["date", col]].dropna()
+            fig.add_trace(go.Scatter(
+                x=s["date"], y=s[col],
+                name=meta["label"], mode="lines",
+                line=dict(color=meta["color"], width=2),
+                hovertemplate=f"{meta['label']}: %{{y:+.2f}}%<extra></extra>",
+            ))
+        fig.add_hline(y=0, line_color=INK_MUTED, line_width=1)
+        fig = base_layout(fig, height=430)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+
+def signal_history(df: pd.DataFrame) -> None:
+    st.markdown('<div class="section-label">Signal history</div>', unsafe_allow_html=True)
+
+    fig = go.Figure(go.Scatter(
+        x=df["date"], y=df["signal_score"], mode="lines",
+        line=dict(color="#2a78d6", width=2, shape="hv"),
+        fill="tozeroy", fillcolor="rgba(42,120,214,0.10)",
+        hovertemplate="Signal score: %{y} of 6<extra></extra>",
+    ))
+    fig.add_hline(y=3, line_dash="dot", line_color=STATUS["critical"], line_width=1.5,
+                  annotation_text="Recession-watch threshold",
+                  annotation_position="top left",
+                  annotation_font=dict(color=STATUS["critical"], size=11))
+    fig = base_layout(fig, height=230)
+    fig.update_yaxes(range=[0, 6.3], dtick=1)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+    flag_cols = list(FLAG_DESCRIPTIONS.keys())
+    heat = df[["date"] + flag_cols].copy()
+    heat[flag_cols] = heat[flag_cols].astype(int)
+    heat = heat.set_index("date")[flag_cols]
+    z = heat.T.values
+
+    fig2 = go.Figure(go.Heatmap(
+        z=z, x=heat.index, y=[FLAG_DESCRIPTIONS[c] for c in flag_cols],
+        xgap=0, ygap=5, showscale=False,
+        colorscale=[[0, "#efeee9"], [1, STATUS["critical"]]],
+        zmin=0, zmax=1,
+        hovertemplate="%{y}<br>%{x|%b %Y}: %{customdata}<extra></extra>",
+        customdata=[["Active" if v else "Inactive" for v in row] for row in z],
+    ))
+    fig2.update_layout(
+        height=250, font=dict(family=FONT, color=INK_SECONDARY, size=12),
+        margin=dict(l=0, r=8, t=6, b=0),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+    fig2.update_xaxes(showgrid=False, showline=False, tickfont=dict(color=INK_MUTED))
+    fig2.update_yaxes(showgrid=False, showline=False, tickfont=dict(color=INK_MUTED, size=11), autorange="reversed")
+    st.plotly_chart(fig2, width="stretch", config={"displayModeBar": False})
+
+
+def glossary_section() -> None:
+    with st.expander("Glossary: what each indicator means, and what's historically good vs. bad"):
+        for key, entry in GLOSSARY.items():
+            meta = INDICATOR_META[key]
+            st.markdown(
+                f"""
+                <div style="display:flex; gap:0.7rem; margin-bottom:1.1rem;">
+                    <span style="width:9px; height:9px; border-radius:50%; background:{meta['color']}; margin-top:0.4rem; flex:none;"></span>
+                    <div>
+                        <div style="font-weight:660; color:{INK_PRIMARY};">{meta['label']}</div>
+                        <div style="color:{INK_SECONDARY}; font-size:0.9rem; margin-top:0.15rem; line-height:1.5;">{entry['what']}</div>
+                        <div style="color:{INK_MUTED}; font-size:0.85rem; margin-top:0.3rem; line-height:1.5;">{entry['context']}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def footer() -> None:
+    st.markdown(
+        f"""
+        <div class="footer">
+            <span>Source: Federal Reserve Economic Data (FRED), St. Louis Fed</span>
+            <span>Pipeline: Python &rarr; Airflow &rarr; dbt &rarr; Streamlit &nbsp;·&nbsp; refreshed daily via GitHub Actions</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Sidebar + main
+# --------------------------------------------------------------------------- #
 def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    st.sidebar.markdown('<div class="section-label">Controls</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="section-label">Filters</div>', unsafe_allow_html=True)
 
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
@@ -267,16 +625,14 @@ def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         min_value=min_date,
         max_value=max_date,
     )
-    # date_input returns a single-element tuple while the user has only picked
-    # the start of the range (before choosing an end date) -- fall back to the
-    # current end of data until both dates are selected, rather than crashing.
     if len(date_range) == 2:
         start, end = date_range
     else:
         start, end = date_range[0], max_date
 
+    st.sidebar.write("")
     selected = st.sidebar.multiselect(
-        "Indicators to display",
+        "Indicators",
         options=list(INDICATOR_META.keys()),
         default=list(INDICATOR_META.keys()),
         format_func=lambda k: INDICATOR_META[k]["label"],
@@ -286,236 +642,10 @@ def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     return df[mask].copy(), selected
 
 
-def sparkline(df: pd.DataFrame, key: str, color: str) -> go.Figure:
-    tail = df[["date", key]].dropna().tail(12)
-    fig = go.Figure(go.Scatter(
-        x=tail["date"], y=tail[key],
-        mode="lines",
-        line=dict(color=color, width=2, shape="spline"),
-        hoverinfo="skip",
-    ))
-    fig.update_layout(
-        height=42,
-        margin=dict(l=0, r=0, t=0, b=0),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
-    )
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
-    return fig
-
-
-def _kpi_tile(col, df: pd.DataFrame, key: str) -> None:
-    meta = INDICATOR_META[key]
-    # each series publishes on its own lag (GDP is quarterly, CPI/sentiment
-    # trail by weeks) -- use each indicator's own most recent non-null row
-    # rather than the last row of the full outer-joined table.
-    available = df.dropna(subset=[key])
-    as_of = None
-    if not available.empty:
-        latest_row = available.iloc[-1]
-        val = latest_row[key]
-        mom = latest_row.get(f"{key}_mom_pct")
-        as_of = latest_row["date"]
-    else:
-        val = mom = None
-    with col:
-        st.metric(
-            label=meta["label"],
-            value=f"{val:,.2f}" if pd.notna(val) else "N/A",
-            delta=f"{mom:+.2f}% MoM" if pd.notna(mom) else None,
-            help=f"As of {as_of:%b %Y}" if as_of is not None else None,
-        )
-        st.plotly_chart(
-            sparkline(df, key, meta["color"]),
-            width="stretch",
-            config={"displayModeBar": False},
-            key=f"spark_{key}",
-        )
-
-
-def kpi_cards(df: pd.DataFrame, selected: list[str]) -> None:
-    st.markdown('<div class="section-label">Latest readings</div>', unsafe_allow_html=True)
-    # wrap into rows instead of squeezing every tile into one row -- cramming
-    # 5-6 tiles side by side truncates the value text.
-    for row_start in range(0, len(selected), KPI_TILES_PER_ROW):
-        row_keys = selected[row_start:row_start + KPI_TILES_PER_ROW]
-        cols = st.columns(KPI_TILES_PER_ROW)
-        for col, key in zip(cols, row_keys):
-            _kpi_tile(col, df, key)
-        for col in cols[len(row_keys):]:
-            with col:
-                st.empty()
-
-
-def time_series_chart(df: pd.DataFrame, selected: list[str]) -> None:
-    st.markdown('<div class="section-label">Indicator trends over time</div>', unsafe_allow_html=True)
-
-    tabs = st.tabs(["Raw values", "Month-over-month %", "3-month rolling average"])
-    variants = [("", ""), ("_mom_pct", " (MoM %)"), ("_3m_avg", " (3-mo avg)")]
-
-    for tab, (suffix, label_suffix) in zip(tabs, variants):
-        with tab:
-            fig = go.Figure()
-            for key in selected:
-                col = f"{key}{suffix}"
-                if col not in df.columns:
-                    continue
-                meta = INDICATOR_META[key]
-                fig.add_trace(go.Scatter(
-                    x=df["date"],
-                    y=df[col],
-                    name=meta["label"] + label_suffix,
-                    mode="lines",
-                    line=dict(color=meta["color"], width=2),
-                    hovertemplate=f"{meta['label']}: %{{y:.2f}} {meta['unit']}<extra></extra>",
-                ))
-            fig = base_layout(fig, height=440)
-            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
-
-
-def status_for_score(score: int, recession_watch: bool) -> tuple[str, str]:
-    if recession_watch:
-        return STATUS["critical"], "Recession watch"
-    if score >= 2:
-        return STATUS["warning"], "Elevated"
-    return STATUS["good"], "Stable"
-
-
-def signal_panel(df: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label">Economic signals</div>', unsafe_allow_html=True)
-    latest = df.iloc[-1]
-
-    active_flags = [FLAG_DESCRIPTIONS[f] for f in FLAG_DESCRIPTIONS if latest.get(f, False)]
-    score = int(latest.get("signal_score", 0))
-    recession_watch = bool(latest.get("recession_watch", False))
-    colour, status_label = status_for_score(score, recession_watch)
-
-    col_score, col_flags = st.columns([1, 2.2])
-
-    with col_score:
-        st.markdown(
-            f"""
-            <div style="text-align:center; padding:22px 16px; border-radius:12px;
-                        background:{SURFACE}; border:1px solid rgba(11,11,11,0.08);">
-                <div style="font-size:3.2rem; font-weight:650; color:{INK_PRIMARY}; line-height:1;">{score}<span style="font-size:1.4rem; color:{INK_MUTED};">/6</span></div>
-                <div style="font-size:0.82rem; color:{INK_SECONDARY}; margin-top:0.3rem;">Signal score</div>
-                <div style="margin-top:0.85rem;">
-                    <span class="status-pill" style="background:{colour}1a; color:{colour};">
-                        <span class="status-dot" style="background:{colour};"></span>{status_label}
-                    </span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with col_flags:
-        st.markdown(
-            f'<div style="font-size:0.82rem; color:{INK_SECONDARY}; margin-bottom:0.5rem;">Active stress signals</div>',
-            unsafe_allow_html=True,
-        )
-        if active_flags:
-            chips = "".join(
-                f'<div class="flag-chip"><span class="flag-chip-dot"></span>{flag}</div>'
-                for flag in active_flags
-            )
-            st.markdown(chips, unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="no-flags">No active stress signals. Economic conditions appear stable.</div>', unsafe_allow_html=True)
-
-    fig = go.Figure(go.Scatter(
-        x=df["date"], y=df["signal_score"],
-        mode="lines",
-        line=dict(color="#2a78d6", width=2),
-        fill="tozeroy",
-        fillcolor="rgba(42,120,214,0.10)",
-        hovertemplate="Signal score: %{y}<extra></extra>",
-    ))
-    fig.add_hline(y=3, line_dash="dot", line_color=STATUS["critical"], line_width=1,
-                  annotation_text="Recession watch threshold", annotation_font=dict(color=INK_MUTED, size=11))
-    fig = base_layout(fig, height=220)
-    fig.update_yaxes(range=[0, 6], dtick=1)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
-
-
-def flag_heatmap(df: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label">Flag history</div>', unsafe_allow_html=True)
-    flag_cols = list(FLAG_DESCRIPTIONS.keys())
-    heat_df = df[["date"] + flag_cols].copy()
-    heat_df[flag_cols] = heat_df[flag_cols].astype(int)
-    heat_df = heat_df.set_index("date")[flag_cols]
-
-    z = heat_df.T.values
-    y_labels = [FLAG_DESCRIPTIONS[c] for c in flag_cols]
-
-    fig = go.Figure(go.Heatmap(
-        z=z,
-        x=heat_df.index,
-        y=y_labels,
-        xgap=1,
-        ygap=6,
-        showscale=False,
-        colorscale=[[0, "#eeede8"], [1, STATUS["critical"]]],
-        zmin=0, zmax=1,
-        hovertemplate="%{y}<br>%{x|%b %Y}: %{customdata}<extra></extra>",
-        customdata=[["Active" if v else "Inactive" for v in row] for row in z],
-    ))
-    fig.update_layout(
-        height=260,
-        font=dict(family=FONT, color=INK_SECONDARY, size=12),
-        margin=dict(l=0, r=0, t=10, b=0),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    fig.update_xaxes(showgrid=False, showline=False, tickfont=dict(color=INK_MUTED))
-    fig.update_yaxes(showgrid=False, showline=False, tickfont=dict(color=INK_MUTED), autorange="reversed")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
-
-
-def glossary_section() -> None:
-    with st.expander("Glossary: what these indicators mean, and what's historically good vs. bad"):
-        for key, entry in GLOSSARY.items():
-            meta = INDICATOR_META[key]
-            st.markdown(
-                f"""
-                <div style="display:flex; gap:0.6rem; margin-bottom:1.1rem;">
-                    <span class="status-dot" style="background:{meta['color']}; margin-top:0.35rem;"></span>
-                    <div>
-                        <div style="font-weight:650; color:{INK_PRIMARY};">{meta['label']}</div>
-                        <div style="color:{INK_SECONDARY}; font-size:0.9rem; margin-top:0.15rem;">{entry['what']}</div>
-                        <div style="color:{INK_MUTED}; font-size:0.85rem; margin-top:0.3rem;">{entry['context']}</div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(f'<hr style="border-color:{GRIDLINE}; margin: 0.5rem 0 1.1rem 0;">', unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="font-weight:650; color:{INK_PRIMARY}; margin-bottom:0.4rem;">Signal score</div>'
-            f'<div style="color:{INK_SECONDARY}; font-size:0.9rem;">'
-            "Each month, six stress flags are checked (one per indicator above, using the thresholds noted "
-            "in its entry). The signal score is simply how many are active at once, 0–6. A score of 3 or "
-            "more triggers <b>Recession watch</b>, a heuristic modeled on the simultaneous deterioration "
-            "seen ahead of the 2008 and 2020 downturns, not a guarantee of a recession.</div>",
-            unsafe_allow_html=True,
-        )
-
-
 def main() -> None:
     inject_css()
-
-    st.markdown('<div class="app-title">U.S. Economic Indicators Dashboard</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="app-caption">Federal Reserve Economic Data (FRED) · '
-        'Pipeline: Python → Airflow → Spark → dbt → Streamlit</div>',
-        unsafe_allow_html=True,
-    )
-    glossary_section()
-
     df = load_data()
+    meta = load_metadata()
 
     if df.empty:
         st.error("No data available. Check your data source configuration.")
@@ -523,23 +653,35 @@ def main() -> None:
 
     filtered_df, selected = sidebar(df)
 
-    if not selected:
-        st.warning("Select at least one indicator in the sidebar.")
+    header(df, meta)
+
+    if filtered_df.empty:
+        st.warning("No data in the selected date range.")
         return
 
-    kpi_cards(filtered_df, selected)
+    signal_banner(filtered_df)
+    st.write("")
     st.divider()
-    time_series_chart(filtered_df, selected)
-    st.divider()
-    signal_panel(filtered_df)
-    st.divider()
-    flag_heatmap(filtered_df)
+
+    if not selected:
+        st.warning("Select at least one indicator in the sidebar to see readings and trends.")
+    else:
+        kpi_grid(filtered_df, selected)
+        st.divider()
+        trends(filtered_df, selected)
+        st.divider()
+
+    signal_history(filtered_df)
+    st.write("")
+    glossary_section()
 
     with st.expander("Raw data table"):
         st.dataframe(
             filtered_df.sort_values("date", ascending=False).reset_index(drop=True),
             width="stretch",
         )
+
+    footer()
 
 
 if __name__ == "__main__":
