@@ -17,7 +17,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-LOCAL_PARQUET = Path(__file__).parent.parent / "dbt" / "target" / "economic_dashboard.parquet"
+LOCAL_DBT_PARQUET = Path(__file__).parent.parent / "dbt" / "target" / "economic_dashboard.parquet"
+LOCAL_SNAPSHOT_PARQUET = Path(__file__).parent.parent / "data" / "economic_dashboard.parquet"
 S3_PARQUET_KEY = "processed/economic_indicators"
 
 FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
@@ -176,10 +177,15 @@ def inject_css() -> None:
 
 @st.cache_data(ttl=3600, show_spinner="Loading economic data...")
 def load_data() -> pd.DataFrame:
-    if LOCAL_PARQUET.exists():
-        df = pd.read_parquet(LOCAL_PARQUET)
-        df["date"] = pd.to_datetime(df["date"])
-        return df.sort_values("date")
+    # a local dbt build takes priority (a dev who just ran `dbt run` sees
+    # their own fresh output); the committed snapshot is what a deployed
+    # app (e.g. Streamlit Community Cloud) actually has, refreshed daily by
+    # .github/workflows/refresh_data.yml
+    for local_path in (LOCAL_DBT_PARQUET, LOCAL_SNAPSHOT_PARQUET):
+        if local_path.exists():
+            df = pd.read_parquet(local_path)
+            df["date"] = pd.to_datetime(df["date"])
+            return df.sort_values("date")
 
     bucket = os.environ.get("AWS_BUCKET_NAME")
     if bucket:
