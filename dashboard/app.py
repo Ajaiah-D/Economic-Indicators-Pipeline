@@ -27,7 +27,7 @@ S3_PARQUET_KEY = "processed/economic_indicators"
 
 FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 
-# -- validated categorical palette (see dataviz skill palette.md), fixed order --
+# colourblind-safe categorical palette, fixed order per indicator
 INK_PRIMARY = "#0b0b0b"
 INK_SECONDARY = "#52514e"
 INK_MUTED = "#898781"
