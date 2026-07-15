@@ -1,0 +1,31 @@
+# Full pipeline stack for local development (ingestion, orchestration,
+# transform, modeling). Not needed to serve the dashboard -- see
+# requirements.txt for the slim runtime the deployed app uses.
+#
+# Note: Airflow/PySpark/dbt pin to older Python; use a Python 3.12 venv.
+
+# ── FRED ingestion ────────────────────────────────────────────────────────────
+fredapi==0.5.1
+boto3>=1.34
+python-dotenv>=1.0
+
+# ── Airflow (pinned for reproducibility; extras kept minimal) ─────────────────
+apache-airflow==2.9.3
+
+# ── PySpark (local testing; Databricks cluster provides its own runtime) ───────
+pyspark==3.5.1
+
+# ── dbt ───────────────────────────────────────────────────────────────────────
+dbt-core>=1.8
+dbt-duckdb>=1.8          # local testing against DuckDB
+# dbt-bigquery>=1.8      # uncomment for BigQuery
+# dbt-spark>=1.8         # uncomment for Databricks
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+streamlit>=1.35
+plotly>=5.22
+pandas>=2.2
+pyarrow>=16              # Parquet support for pandas
+
+# ── Shared utilities ──────────────────────────────────────────────────────────
+requests>=2.31
