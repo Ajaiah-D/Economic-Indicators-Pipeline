@@ -123,8 +123,16 @@ git clone <repo-url>
 cd fred-pipeline
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+
+# Full pipeline (ingestion, Airflow, dbt, dashboard). Use a Python 3.12
+# venv -- Airflow/PySpark/dbt do not support the newest Python releases.
+pip install -r requirements-pipeline.txt
 ```
+
+`requirements.txt` (the file Streamlit Community Cloud installs) is a slim
+runtime for the **dashboard only** -- it deliberately omits Airflow, PySpark,
+and dbt so the hosted app builds quickly. Use `requirements-pipeline.txt` for
+full local development.
 
 ### 2. Configure credentials
 
