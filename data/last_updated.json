@@ -1,5 +1,5 @@
 {
-  "last_updated_utc": "2026-07-19T14:28:04+00:00",
+  "last_updated_utc": "2026-07-19T14:53:03+00:00",
   "tables": {
     "economic_dashboard": {
       "row_count": 1110,
@@ -13,6 +13,13 @@
       "date_range": {
         "start": "1929-01-01",
         "end": "2026-05-01"
+      }
+    },
+    "vintage_dashboard": {
+      "row_count": 23467,
+      "date_range": {
+        "start": "1939-01-01",
+        "end": "2026-06-01"
       }
     }
   },

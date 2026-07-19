@@ -33,6 +33,7 @@ dbt/.user.yml
 # to read without needing AWS credentials at deploy time
 !data/economic_dashboard.parquet
 !data/state_dashboard.parquet
+!data/vintage_dashboard.parquet
 !data/last_updated.json
 
 # jupyter

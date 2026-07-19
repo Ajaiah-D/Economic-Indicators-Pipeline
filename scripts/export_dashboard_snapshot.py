@@ -25,6 +25,7 @@ LAST_UPDATED_JSON = DATA_DIR / "last_updated.json"
 MARTS = {
     "economic_dashboard": "economic_dashboard.parquet",
     "state_dashboard": "state_dashboard.parquet",
+    "vintage_dashboard": "vintage_dashboard.parquet",
 }
 
 
