@@ -10,6 +10,8 @@ import streamlit as st
 from dotenv import load_dotenv
 from plotly.subplots import make_subplots
 
+from briefing import build_briefing
+
 load_dotenv()
 
 st.set_page_config(
@@ -216,6 +218,26 @@ def inject_css() -> None:
             border: 1px solid rgba(12,163,12,0.28); border-radius: 8px;
             font-size: 0.9rem; color: {INK_PRIMARY};
         }}
+
+        /* monthly briefing */
+        .brief-card {{
+            background: {SURFACE};
+            border: 1px solid {GRIDLINE};
+            border-radius: 16px;
+            padding: 1.1rem 1.3rem 1.2rem 1.3rem;
+            box-shadow: 0 1px 2px rgba(11,11,11,0.04);
+        }}
+        .brief-head {{ display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.65rem; flex-wrap: wrap; }}
+        .brief-title {{ font-weight: 680; font-size: 1.02rem; color: {INK_PRIMARY}; }}
+        .brief-vs {{ color: {INK_MUTED}; font-size: 0.78rem; }}
+        .brief-item {{
+            display: flex; gap: 0.6rem; align-items: flex-start;
+            margin: 0.42rem 0; color: {INK_SECONDARY};
+            font-size: 0.92rem; line-height: 1.55;
+        }}
+        .brief-item strong {{ color: {INK_PRIMARY}; font-weight: 650; }}
+        .brief-dot {{ width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 0.48rem; }}
+        .brief-quiet {{ color: {INK_MUTED}; font-size: 0.84rem; margin-top: 0.55rem; }}
 
         .footer {{
             margin-top: 2.5rem; padding-top: 1rem;
@@ -450,6 +472,39 @@ def signal_banner(df: pd.DataFrame) -> None:
             "of flagged months turning out to be false alarms (not a forecast).</div>",
             unsafe_allow_html=True,
         )
+
+
+def briefing_section(df: pd.DataFrame) -> None:
+    # always fed the full history: superlatives ("lowest since 2009") are
+    # meaningless when the comparison window is whatever range the sidebar
+    # happens to be filtered to
+    b = build_briefing(df)
+    if b is None:
+        return
+    st.markdown('<div class="section-label">This month in brief</div>', unsafe_allow_html=True)
+    tone_colors = {"warn": STATUS["warning"], "good": STATUS["good"], "neutral": INK_MUTED}
+    rows = "".join(
+        f'<div class="brief-item"><span class="brief-dot" style="background:{tone_colors[item.tone]};"></span>'
+        f"<span>{item.text}</span></div>"
+        for item in [b.score_item] + b.items
+    )
+    quiet_html = ""
+    if b.quiet:
+        names = b.quiet[0] if len(b.quiet) == 1 else ", ".join(b.quiet[:-1]) + " and " + b.quiet[-1]
+        quiet_html = f'<div class="brief-quiet">Little change in {names}.</div>'
+    st.markdown(
+        f"""
+        <div class="brief-card">
+            <div class="brief-head">
+                <span class="brief-title">{b.latest_label}</span>
+                <span class="brief-vs">vs {b.previous_label} &nbsp;·&nbsp; written automatically from each data refresh</span>
+            </div>
+            {rows}
+            {quiet_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _kpi_tile(df: pd.DataFrame, key: str) -> None:
@@ -704,6 +759,7 @@ def main() -> None:
 
     signal_banner(filtered_df)
     st.write("")
+    briefing_section(df)
     st.divider()
 
     if not selected:
