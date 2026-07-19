@@ -2,7 +2,10 @@ version: 2
 
 sources:
   - name: fred_raw
-    meta:
-      external_location: "s3://{{ env_var('AWS_BUCKET_NAME') }}/processed/economic_indicators/*.parquet"
     tables:
       - name: economic_indicators
+        meta:
+          external_location: "s3://{{ env_var('AWS_BUCKET_NAME') }}/processed/economic_indicators/*.parquet"
+      - name: state_indicators
+        meta:
+          external_location: "s3://{{ env_var('AWS_BUCKET_NAME') }}/processed/state_indicators/*.parquet"

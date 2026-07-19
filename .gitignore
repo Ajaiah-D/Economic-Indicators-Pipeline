@@ -32,6 +32,7 @@ dbt/.user.yml
 # .github/workflows/refresh_data.yml so a deployed dashboard has data
 # to read without needing AWS credentials at deploy time
 !data/economic_dashboard.parquet
+!data/state_dashboard.parquet
 !data/last_updated.json
 
 # jupyter

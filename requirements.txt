@@ -2,7 +2,7 @@
 # Kept deliberately slim so the hosted app builds fast; the full pipeline
 # stack (Airflow, PySpark, dbt) lives in requirements-pipeline.txt and is
 # not needed to serve the dashboard, which reads a committed data snapshot.
-streamlit>=1.35
+streamlit>=1.40
 plotly>=5.22
 pandas>=2.2
 pyarrow>=16
