@@ -1,10 +1,12 @@
 # Economic Indicators Pipeline
 
-An end-to-end data pipeline that pulls eight data series from the Federal
-Reserve (FRED), six macro indicators plus two Treasury rates that power a
-yield-curve signal, moves them through ingestion, orchestration, and
-transformation, models them with dbt, and serves the result in a Streamlit
-dashboard with a recession-risk signal backtested against real history.
+An end-to-end data pipeline over 160+ Federal Reserve (FRED/ALFRED) data
+series: national macro indicators with a backtested recession-risk signal
+and an auto-written monthly briefing, state-level unemployment, house
+prices, and income for all 50 states + DC, and point-in-time vintage data
+showing how first-print numbers were later revised. Ingestion,
+orchestration, and transformation feed dbt models, and a three-page
+Streamlit dashboard serves the result, refreshed daily.
 
 **Live dashboard:** https://ajaiah-d-economic-indicators-pipeline-dashboardapp-d8tih5.streamlit.app/
 
@@ -12,12 +14,31 @@ dashboard with a recession-risk signal backtested against real history.
 
 ## Architecture
 
-1. **Ingestion** (`ingestion/fetch_fred.py`) pulls each of the eight series from the FRED API and writes timestamped CSVs to S3, partitioned by indicator and date.
-2. **Orchestration** (`dags/fred_ingestion_dag.py`) runs that ingestion on a daily Airflow DAG (TaskFlow API), one fetch/write task pair per indicator, with retries and exponential backoff.
-3. **Transform** (`spark/transform_indicators.py` or `spark/transform_indicators_local.py`) reads the raw CSVs, computes month-over-month % change and a 3-month rolling average per indicator, derives the 10Y-3M Treasury spread, joins everything into one wide table by date, and writes it back to S3 as Parquet.
-4. **Modeling** (`dbt/`) builds three layers on top of that Parquet file with dbt-duckdb: a staging view (type casting), an intermediate view (seven binary stress flags + a composite signal score), and a materialized marts table.
-5. **Dashboard** (`dashboard/app.py`) is Streamlit + Plotly: KPI tiles, a per-indicator trends view, the recession-risk signal, and a flag history heatmap.
-6. **Refresh** (`.github/workflows/refresh_data.yml`) runs the whole chain daily and commits a small snapshot back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
+1. **Ingestion** (`ingestion/`) pulls from the FRED API and writes timestamped CSVs to S3: `fetch_fred.py` for the eight national series, `fetch_fred_states.py` for ~150 state-level series (rate-limited batch), and `fetch_fred_vintages.py` for ALFRED vintage data -- every value each series has ever published.
+2. **Orchestration** (`dags/fred_ingestion_dag.py`) runs the national ingestion on a daily Airflow DAG (TaskFlow API), one fetch/write task pair per indicator, with retries and exponential backoff.
+3. **Transform** (`spark/`) reads the raw CSVs and writes processed Parquet back to S3: national wide table with MoM % change, 3-month rolling averages, and the 10Y-3M Treasury spread; a long state table with per-state YoY changes computed at each indicator's native frequency; and a long vintage table keyed by (series, observation date, release date).
+4. **Modeling** (`dbt/`) builds staging views and materialized marts with dbt-duckdb: the national mart adds seven binary stress flags + a composite signal score, the state mart adds per-date ranks across the 51-state field, and the vintage mart adds first-print / latest-revision window columns.
+5. **Dashboard** (`dashboard/`) is a multi-page Streamlit + Plotly app -- see "Dashboard pages" below.
+6. **Refresh** (`.github/workflows/refresh_data.yml`) runs the whole chain daily and commits small snapshots back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
+
+## Dashboard pages
+
+- **National overview**: KPI tiles, per-indicator trends, the recession-risk
+  signal with flag-history heatmap, and a **monthly briefing written
+  automatically from the data**: it diffs the latest complete month against
+  the prior one and scans each series' full history so it can say "housing
+  starts fell 15%, the sharpest monthly drop since 2024, activating a stress
+  flag" instead of just showing numbers.
+- **State by state**: unemployment (monthly), FHFA house-price growth
+  (quarterly), and per-capita income (annual) for all 50 states + DC; each
+  state ranked against the field, charted against the U.S., and mapped on a
+  choropleth.
+- **Data revisions**: built on ALFRED vintage data. GDP growth as first
+  reported vs today's estimate (computed within vintages, so benchmark
+  rebasings of the level can't distort it), and a "time machine" that
+  reconstructs unemployment, housing starts, or payrolls exactly as they
+  looked on any chosen date -- e.g. the economy as visible in September 2008
+  vs what we now know was happening.
 
 ## FRED Indicators
 
@@ -34,30 +55,50 @@ dashboard with a recession-risk signal backtested against real history.
 
 GS10 minus TB3MS gives the yield-curve spread used in the recession signal below.
 
+Beyond these, the pipeline also ingests:
+
+- **State-level** (~150 series): `{ST}UR` unemployment rate (monthly), `{ST}STHPI`
+  FHFA all-transactions house price index (quarterly), and `{ST}PCPI` per-capita
+  personal income (annual) for all 50 states + DC.
+- **Vintages** (ALFRED): every value ever published for GDP, PAYEMS (nonfarm
+  payrolls), UNRATE, and HOUST -- one row per (observation date, release date).
+
 ## Project Structure
 
 ```
 Economic-Indicators-Pipeline/
 ├── ingestion/
-│   └── fetch_fred.py                  FRED -> S3 ingestion
+│   ├── fetch_fred.py                  national series -> S3
+│   ├── fetch_fred_states.py           ~150 state series -> S3 (rate-limited)
+│   └── fetch_fred_vintages.py         ALFRED vintage data -> S3
 ├── dags/
 │   └── fred_ingestion_dag.py          Airflow DAG (TaskFlow API)
 ├── spark/
 │   ├── transform_indicators.py        PySpark version, for a Databricks cluster
-│   └── transform_indicators_local.py  pandas equivalent, used by the daily refresh
+│   ├── transform_indicators_local.py  pandas equivalent, used by the daily refresh
+│   ├── transform_states_local.py      state long table + per-state YoY changes
+│   └── transform_vintages_local.py    vintage long table (obs date x release date)
 ├── dbt/
 │   ├── dbt_project.yml
 │   ├── profiles.yml
 │   └── models/
-│       ├── staging/stg_fred_indicators.sql
+│       ├── staging/                   stg_fred_indicators, stg_state_indicators,
+│       │                              stg_fred_vintages
 │       ├── intermediate/int_indicator_trends.sql
-│       └── marts/economic_dashboard.sql
+│       └── marts/                     economic_dashboard, state_dashboard,
+│                                      vintage_dashboard
 ├── dashboard/
-│   └── app.py                         Streamlit dashboard
+│   ├── app.py                         entry point + national page + navigation
+│   ├── briefing.py                    auto-written monthly briefing engine
+│   ├── states_view.py                 state-by-state page
+│   ├── revisions_view.py              data-revisions page
+│   └── theme.py                       shared design tokens + chart helpers
 ├── scripts/
-│   └── export_dashboard_snapshot.py   dbt output -> committed Parquet snapshot
+│   └── export_dashboard_snapshot.py   dbt marts -> committed Parquet snapshots
 ├── data/
-│   ├── economic_dashboard.parquet     committed snapshot, refreshed daily
+│   ├── economic_dashboard.parquet     committed snapshots, refreshed daily
+│   ├── state_dashboard.parquet
+│   ├── vintage_dashboard.parquet
 │   └── last_updated.json
 ├── .github/workflows/
 │   └── refresh_data.yml               daily ingest -> transform -> dbt -> snapshot
@@ -101,10 +142,12 @@ cp .env.example .env
 ### 1. Ingest from FRED to S3
 
 ```bash
-python ingestion/fetch_fred.py
+python ingestion/fetch_fred.py           # 8 national series
+python ingestion/fetch_fred_states.py    # ~150 state series (takes ~90s, rate-limited)
+python ingestion/fetch_fred_vintages.py  # ALFRED vintages for 4 series
 ```
 
-Fetches all eight series and uploads timestamped CSVs to `s3://<AWS_BUCKET_NAME>/raw/`.
+Each uploads timestamped CSVs to `s3://<AWS_BUCKET_NAME>/raw/`.
 
 ### 2. Run the Airflow DAG locally
 
@@ -123,12 +166,14 @@ The web UI is at `http://localhost:8080` (default user: `admin`).
 
 ### 3. Transform: local pandas or PySpark on Databricks
 
-The daily refresh workflow uses the local pandas version, since the dataset
-is about a thousand rows total and a Spark cluster isn't buying anything at
-this scale:
+The daily refresh workflow uses the local pandas versions, since the datasets
+are tens of thousands of rows at most and a Spark cluster isn't buying
+anything at this scale:
 
 ```bash
 python spark/transform_indicators_local.py
+python spark/transform_states_local.py
+python spark/transform_vintages_local.py
 ```
 
 `spark/transform_indicators.py` is the PySpark equivalent, written for a
@@ -155,9 +200,9 @@ dbt test
 python scripts/export_dashboard_snapshot.py
 ```
 
-Copies the dbt marts table to `data/economic_dashboard.parquet` and writes
-`data/last_updated.json` (timestamp, row count, date range). This is the
-file a deployed dashboard actually reads.
+Copies the dbt mart tables to `data/*.parquet` (national, state, vintage)
+and writes `data/last_updated.json` (timestamp, row counts, date ranges).
+These are the files a deployed dashboard actually reads.
 
 ### 6. Launch the dashboard
 
