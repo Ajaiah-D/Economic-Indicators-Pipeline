@@ -36,8 +36,14 @@ jobs:
       - name: Ingest latest FRED series to S3
         run: python ingestion/fetch_fred.py
 
+      - name: Ingest state-level FRED series to S3 (~150 series, rate-limited)
+        run: python ingestion/fetch_fred_states.py
+
       - name: Transform and join indicators, write processed Parquet to S3
         run: python spark/transform_indicators_local.py
+
+      - name: Transform state indicators, write processed Parquet to S3
+        run: python spark/transform_states_local.py
 
       - name: Build dbt models
         working-directory: dbt
@@ -51,7 +57,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/economic_dashboard.parquet data/last_updated.json
+          git add data/*.parquet data/last_updated.json
           if git diff --cached --quiet; then
             echo "No data changes -- skipping commit."
           else

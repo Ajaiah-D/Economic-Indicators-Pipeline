@@ -10,7 +10,21 @@ import streamlit as st
 from dotenv import load_dotenv
 from plotly.subplots import make_subplots
 
+import states_view
 from briefing import build_briefing
+from theme import (
+    FONT,
+    GRIDLINE,
+    INK_MUTED,
+    INK_PRIMARY,
+    INK_SECONDARY,
+    PAGE,
+    STATUS,
+    SURFACE,
+    base_layout,
+    rgba as _rgba,
+    sparkline,
+)
 
 load_dotenv()
 
@@ -26,23 +40,6 @@ LOCAL_DBT_PARQUET = REPO_ROOT / "dbt" / "target" / "economic_dashboard.parquet"
 LOCAL_SNAPSHOT_PARQUET = REPO_ROOT / "data" / "economic_dashboard.parquet"
 LAST_UPDATED_JSON = REPO_ROOT / "data" / "last_updated.json"
 S3_PARQUET_KEY = "processed/economic_indicators"
-
-FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
-
-# colourblind-safe categorical palette, fixed order per indicator
-INK_PRIMARY = "#0b0b0b"
-INK_SECONDARY = "#52514e"
-INK_MUTED = "#898781"
-GRIDLINE = "#e8e7e1"
-SURFACE = "#ffffff"
-PAGE = "#f7f6f3"
-
-STATUS = {
-    "good": "#0ca30c",
-    "warning": "#e0940a",
-    "serious": "#ec835a",
-    "critical": "#d03b3b",
-}
 
 INDICATOR_META = {
     "cpi":                {"label": "CPI",                "short": "CPI",        "unit": "Index (1982-84=100)", "fmt": "{:,.1f}", "color": "#2a78d6"},
@@ -339,50 +336,6 @@ def latest_complete_row(df: pd.DataFrame) -> pd.Series:
     # calm score because the newest month is still half-empty (publish lag).
     complete = df.dropna(subset=[c for c in MONTHLY_CORE if c in df.columns])
     return complete.iloc[-1] if not complete.empty else df.iloc[-1]
-
-
-# --------------------------------------------------------------------------- #
-# Chart helpers
-# --------------------------------------------------------------------------- #
-def base_layout(fig: go.Figure, height: int) -> go.Figure:
-    fig.update_layout(
-        height=height,
-        font=dict(family=FONT, color=INK_SECONDARY, size=12),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    font=dict(color=INK_SECONDARY), bgcolor="rgba(0,0,0,0)"),
-        margin=dict(l=0, r=8, t=34, b=0),
-        hovermode="x unified",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        hoverlabel=dict(bgcolor=SURFACE, bordercolor=GRIDLINE, font=dict(family=FONT, color=INK_PRIMARY)),
-    )
-    fig.update_xaxes(showgrid=False, showline=True, linecolor=GRIDLINE, tickfont=dict(color=INK_MUTED))
-    fig.update_yaxes(showgrid=True, gridcolor=GRIDLINE, gridwidth=1, zeroline=False, tickfont=dict(color=INK_MUTED))
-    return fig
-
-
-def sparkline(df: pd.DataFrame, key: str, color: str) -> go.Figure:
-    tail = df[["date", key]].dropna().tail(24)
-    fig = go.Figure(go.Scatter(
-        x=tail["date"], y=tail[key],
-        mode="lines",
-        line=dict(color=color, width=2, shape="spline"),
-        fill="tozeroy", fillcolor=_rgba(color, 0.08),
-        hoverinfo="skip",
-    ))
-    fig.update_layout(
-        height=48, margin=dict(l=0, r=0, t=2, b=0),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False,
-    )
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False, range=[tail[key].min() * 0.97, tail[key].max() * 1.03] if not tail.empty else None)
-    return fig
-
-
-def _rgba(hex_color: str, alpha: float) -> str:
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 # --------------------------------------------------------------------------- #
@@ -740,8 +693,7 @@ def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     return df[mask].copy(), selected
 
 
-def main() -> None:
-    inject_css()
+def national_page() -> None:
     df = load_data()
     meta = load_metadata()
 
@@ -781,6 +733,20 @@ def main() -> None:
         )
 
     footer()
+
+
+def states_page() -> None:
+    states_view.render(load_data())
+    footer()
+
+
+def main() -> None:
+    inject_css()
+    nav = st.navigation([
+        st.Page(national_page, title="National overview", url_path="national", default=True),
+        st.Page(states_page, title="State by state", url_path="states"),
+    ])
+    nav.run()
 
 
 if __name__ == "__main__":
