@@ -9,3 +9,6 @@ sources:
       - name: state_indicators
         meta:
           external_location: "s3://{{ env_var('AWS_BUCKET_NAME') }}/processed/state_indicators/*.parquet"
+      - name: fred_vintages
+        meta:
+          external_location: "s3://{{ env_var('AWS_BUCKET_NAME') }}/processed/fred_vintages/*.parquet"

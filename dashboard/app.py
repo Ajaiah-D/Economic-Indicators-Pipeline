@@ -10,6 +10,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from plotly.subplots import make_subplots
 
+import revisions_view
 import states_view
 from briefing import build_briefing
 from theme import (
@@ -740,11 +741,17 @@ def states_page() -> None:
     footer()
 
 
+def revisions_page() -> None:
+    revisions_view.render()
+    footer()
+
+
 def main() -> None:
     inject_css()
     nav = st.navigation([
         st.Page(national_page, title="National overview", url_path="national", default=True),
         st.Page(states_page, title="State by state", url_path="states"),
+        st.Page(revisions_page, title="Data revisions", url_path="revisions"),
     ])
     nav.run()
 

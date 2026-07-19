@@ -39,11 +39,17 @@ jobs:
       - name: Ingest state-level FRED series to S3 (~150 series, rate-limited)
         run: python ingestion/fetch_fred_states.py
 
+      - name: Ingest ALFRED vintage data (every value ever published) to S3
+        run: python ingestion/fetch_fred_vintages.py
+
       - name: Transform and join indicators, write processed Parquet to S3
         run: python spark/transform_indicators_local.py
 
       - name: Transform state indicators, write processed Parquet to S3
         run: python spark/transform_states_local.py
+
+      - name: Transform vintage data, write processed Parquet to S3
+        run: python spark/transform_vintages_local.py
 
       - name: Build dbt models
         working-directory: dbt
