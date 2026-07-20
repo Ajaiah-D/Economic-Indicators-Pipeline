@@ -62,6 +62,23 @@ MOMENTS = {
     "Custom date": None,
 }
 
+# NBER recessions inside the vintage-archive era, for chart shading
+NBER_RECESSIONS = [
+    ("1990-07-01", "1991-03-01"),
+    ("2001-03-01", "2001-11-01"),
+    ("2007-12-01", "2009-06-01"),
+    ("2020-02-01", "2020-04-01"),
+]
+
+
+def add_recession_bands(fig: go.Figure, x_min: pd.Timestamp, x_max: pd.Timestamp) -> None:
+    for s, e in NBER_RECESSIONS:
+        s, e = pd.Timestamp(s), pd.Timestamp(e)
+        if e < x_min or s > x_max:
+            continue
+        fig.add_vrect(x0=max(s, x_min), x1=min(e, x_max),
+                      fillcolor=rgba(INK_MUTED, 0.10), line_width=0, layer="below")
+
 
 @st.cache_data(ttl=3600, show_spinner="Loading vintage data...")
 def load_vintages() -> pd.DataFrame | None:
@@ -87,15 +104,17 @@ def load_vintages() -> pd.DataFrame | None:
 
 
 @st.cache_data(ttl=3600)
-def gdp_growth_revisions() -> pd.DataFrame:
-    """Per quarter: QoQ growth as first printed vs as currently estimated.
+def first_vs_latest(label: str, mode: str) -> pd.DataFrame:
+    """Per observation: the change vs the previous period as first printed
+    vs as currently estimated. mode "pct" gives % change (GDP growth),
+    "diff" gives the absolute change (payroll gains).
 
-    First-print growth divides the first-released value by the previous
-    quarter's value *as it stood on that same release date*, so both sides
-    of the ratio come from one vintage and level rebasings cancel out.
+    Each first-print change compares the first-released value against the
+    previous period's value *as it stood on that same release date*, so
+    both sides come from one vintage and level rebasings cancel out.
     """
     v = load_vintages()
-    g = v[v["label"] == "gdp"].sort_values(["date", "release_date"])
+    g = v[v["label"] == label].sort_values(["date", "release_date"])
     dates = sorted(g["date"].unique())
     by_date = {d: sub for d, sub in g.groupby("date")}
 
@@ -115,16 +134,28 @@ def gdp_growth_revisions() -> pd.DataFrame:
         prev_first = prev_asof["value"].iloc[-1]
         prev_latest = prev["value"].iloc[-1]
 
+        if mode == "pct":
+            first = (first_value / prev_first - 1) * 100
+            latest = (latest_value / prev_latest - 1) * 100
+        else:
+            first = first_value - prev_first
+            latest = latest_value - prev_latest
         rows.append({
             "date": d,
             "first_release": first_release,
-            "first_growth": (first_value / prev_first - 1) * 100,
-            "latest_growth": (latest_value / prev_latest - 1) * 100,
+            "first_growth": first,
+            "latest_growth": latest,
         })
     df = pd.DataFrame(rows)
+    if df.empty:
+        return df
     df["revision_pp"] = df["latest_growth"] - df["first_growth"]
     df["sign_flip"] = (df["first_growth"] * df["latest_growth"]) < 0
     return df
+
+
+def gdp_growth_revisions() -> pd.DataFrame:
+    return first_vs_latest("gdp", "pct")
 
 
 def _quarter(ts: pd.Timestamp) -> str:
@@ -169,29 +200,22 @@ def stat_tiles(rev: pd.DataFrame) -> None:
                     unsafe_allow_html=True)
 
 
-def gdp_chart(rev: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label">GDP growth: first print vs today</div>', unsafe_allow_html=True)
-    st.caption(
-        "Nominal GDP, quarter-over-quarter percent change. Bars are today's estimate; dots are what was "
-        "first reported at the time. Red-ringed dots mark quarters where revisions later flipped the sign "
-        "of growth. Each first print is compared within its own data vintage, so statistical re-basings of "
-        "the GDP level don't distort it."
-    )
-
+def _revision_chart(rev: pd.DataFrame, labeler, value_hover: str, key: str,
+                    y_range: tuple[float, float] | None = None) -> None:
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=rev["date"], y=rev["latest_growth"], name="Today's estimate",
         marker_color=rgba(LATEST, 0.55), marker_line_width=0,
-        customdata=[_quarter(d) for d in rev["date"]],
-        hovertemplate="%{customdata}<br>Today: %{y:+.1f}%<extra></extra>",
+        customdata=[labeler(d) for d in rev["date"]],
+        hovertemplate="%{customdata}<br>Today: " + value_hover + "<extra></extra>",
     ))
     flip = rev[rev["sign_flip"]]
     normal = rev[~rev["sign_flip"]]
     fig.add_trace(go.Scatter(
         x=normal["date"], y=normal["first_growth"], name="First print", mode="markers",
         marker=dict(color=FIRST_PRINT, size=5),
-        customdata=[_quarter(d) for d in normal["date"]],
-        hovertemplate="%{customdata}<br>First print: %{y:+.1f}%<extra></extra>",
+        customdata=[labeler(d) for d in normal["date"]],
+        hovertemplate="%{customdata}<br>First print: " + value_hover + "<extra></extra>",
     ))
     if not flip.empty:
         fig.add_trace(go.Scatter(
@@ -199,13 +223,51 @@ def gdp_chart(rev: pd.DataFrame) -> None:
             mode="markers",
             marker=dict(color=FIRST_PRINT, size=7,
                         line=dict(color=STATUS["critical"], width=2)),
-            customdata=[_quarter(d) for d in flip["date"]],
-            hovertemplate="%{customdata}<br>First print: %{y:+.1f}% (sign later flipped)<extra></extra>",
+            customdata=[labeler(d) for d in flip["date"]],
+            hovertemplate="%{customdata}<br>First print: " + value_hover + " (sign later flipped)<extra></extra>",
         ))
+    add_recession_bands(fig, rev["date"].min(), rev["date"].max())
     fig.add_hline(y=0, line_color=INK_MUTED, line_width=1)
     fig = base_layout(fig, height=380)
     fig.update_layout(bargap=0.35)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    if y_range is not None:
+        fig.update_yaxes(range=list(y_range))
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=key)
+
+
+def first_print_section(rev_gdp: pd.DataFrame) -> None:
+    st.markdown('<div class="section-label">As first reported vs today</div>', unsafe_allow_html=True)
+    tab_gdp, tab_pay = st.tabs(["GDP growth", "Payroll gains"])
+
+    with tab_gdp:
+        st.caption(
+            "Nominal GDP, quarter-over-quarter percent change. Bars are today's estimate; dots are what was "
+            "first reported at the time. Red-ringed dots mark quarters where revisions later flipped the sign "
+            "of growth; shaded bands are NBER recessions. Each first print is compared within its own data "
+            "vintage, so statistical re-basings of the GDP level don't distort it."
+        )
+        _revision_chart(rev_gdp, _quarter, "%{y:+.1f}%", key="rev_gdp")
+
+    with tab_pay:
+        rev_pay = first_vs_latest("nonfarm_payrolls", "diff")
+        if rev_pay.empty:
+            st.info("No payroll vintage data available yet.")
+            return
+        avg_miss = rev_pay["revision_pp"].abs().mean()
+        flips = int(rev_pay["sign_flip"].sum())
+        st.caption(
+            f"Monthly change in nonfarm payrolls, in thousands of jobs: the headline number of every "
+            f"jobs report. Across {len(rev_pay)} months with a true first print, revisions moved the "
+            f"number by {avg_miss:,.0f}K jobs on average, and {flips} months that reported job gains "
+            f"turned out to be losses (or the reverse). Showing the last 12 years; the Covid collapse "
+            f"and rebound (about 20 million jobs each way in spring 2020) run far past the visible "
+            f"range, which is clipped so ordinary months stay readable."
+        )
+        window = rev_pay[rev_pay["date"] >= rev_pay["date"].max() - pd.DateOffset(years=12)]
+        # y-range from the typical spread, not the Covid outlier
+        bound = float(window[["first_growth", "latest_growth"]].abs().quantile(0.98).max()) * 1.35
+        _revision_chart(window, lambda d: f"{pd.Timestamp(d):%b %Y}", "%{y:+,.0f}K", key="rev_pay",
+                        y_range=(-bound, bound))
 
 
 def time_machine(v: pd.DataFrame) -> None:
@@ -260,21 +322,24 @@ def time_machine(v: pd.DataFrame) -> None:
         line=dict(color=NOW_LINE, width=2, dash="dot"),
         hovertemplate="Known now: %{y:,.1f}<extra></extra>",
     ))
+    add_recession_bands(fig, window_start, cutoff)
     fig = base_layout(fig, height=360)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
-    # the single biggest then-vs-now gap inside the window, in plain language
+    # the biggest then-vs-now gaps inside the window, as a small table
     joined = pd.DataFrame({"then": then, "now": now}).dropna()
     if not joined.empty:
-        gap = (joined["now"] - joined["then"]).abs()
-        worst_date = gap.idxmax()
-        w = joined.loc[worst_date]
+        joined["gap"] = joined["now"] - joined["then"]
+        top = joined.reindex(joined["gap"].abs().sort_values(ascending=False).index).head(5)
         unit_bit = f" ({spec['unit']})" if spec["unit"] else ""
-        st.caption(
-            f"Biggest gap in this window: {worst_date:%b %Y}, reported as "
-            f"{spec['fmt'].format(w['then'])} at the time but now estimated at "
-            f"{spec['fmt'].format(w['now'])}{unit_bit}."
-        )
+        st.caption(f"The biggest gaps between what was known then and now, in this window{unit_bit}:")
+        display = pd.DataFrame({
+            "Month": [f"{d:%b %Y}" for d in top.index],
+            "Reported at the time": [spec["fmt"].format(v) for v in top["then"]],
+            "Known now": [spec["fmt"].format(v) for v in top["now"]],
+            "Gap": [f"{v:+,.1f}" for v in top["gap"]],
+        })
+        st.dataframe(display, width="stretch", hide_index=True)
 
 
 def explainer() -> None:
@@ -287,7 +352,7 @@ def explainer() -> None:
             projections for many components; payrolls' first print comes from a survey subset.
 
             The practical consequence: **the economy you read about in real time is a draft.**
-            Several recessions were not visible in the first prints of the data — early 2008
+            Several recessions were not visible in the first prints of the data: early 2008
             GDP releases showed a growing economy. This page exists to make that draft-ness
             visible instead of pretending the latest numbers were always known.
 
@@ -324,7 +389,7 @@ def render() -> None:
     if not rev.empty:
         stat_tiles(rev)
         st.divider()
-        gdp_chart(rev)
+        first_print_section(rev)
         st.divider()
     time_machine(v)
     st.write("")

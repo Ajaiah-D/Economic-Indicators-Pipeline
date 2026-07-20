@@ -122,10 +122,39 @@ def inject_css() -> None:
         section[data-testid="stSidebar"] {{
             width: 350px !important;
             min-width: 350px !important;
+            background: #fbfaf8;
+            border-right: 1px solid {GRIDLINE};
         }}
+        /* nav page links */
+        section[data-testid="stSidebar"] a[data-testid="stSidebarNavLink"] {{
+            border-radius: 9px;
+            padding: 0.3rem 0.75rem;
+            margin-bottom: 0.1rem;
+        }}
+        section[data-testid="stSidebar"] a[data-testid="stSidebarNavLink"] span {{
+            font-size: 0.92rem;
+            font-weight: 600;
+        }}
+        /* sidebar widget labels read as quiet section headings */
+        section[data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {{
+            font-size: 0.74rem;
+            font-weight: 650;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: {INK_MUTED};
+        }}
+        /* compact, consistent pill/segment buttons app-wide */
         div[data-testid="stButtonGroup"] {{
             flex-wrap: wrap;
-            gap: 4px;
+            gap: 5px;
+        }}
+        div[data-testid="stButtonGroup"] button {{
+            padding: 0.14rem 0.6rem;
+            min-height: 1.65rem;
+            font-size: 0.82rem;
+        }}
+        div[data-testid="stButtonGroup"] button p {{
+            font-size: 0.82rem;
         }}
 
         .hero-title {{
@@ -683,11 +712,14 @@ def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
     st.sidebar.caption(f"Showing {start:%b %Y} – {end:%b %Y}")
     st.sidebar.write("")
-    selected = st.sidebar.multiselect(
+    # pills with short names instead of a multiselect: the tag box stacked
+    # seven full-length labels and clipped the longest ones
+    selected = st.sidebar.pills(
         "Indicators",
         options=list(INDICATOR_META.keys()),
         default=list(INDICATOR_META.keys()),
-        format_func=lambda k: INDICATOR_META[k]["label"],
+        selection_mode="multi",
+        format_func=lambda k: INDICATOR_META[k]["short"],
     )
 
     mask = (df["date"].dt.date >= start) & (df["date"].dt.date <= end)
