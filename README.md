@@ -33,12 +33,13 @@ Streamlit dashboard serves the result, refreshed daily.
   (quarterly), and per-capita income (annual) for all 50 states + DC; each
   state ranked against the field, charted against the U.S., and mapped on a
   choropleth.
-- **Data revisions**: built on ALFRED vintage data. GDP growth as first
-  reported vs today's estimate (computed within vintages, so benchmark
-  rebasings of the level can't distort it), and a "time machine" that
-  reconstructs unemployment, housing starts, or payrolls exactly as they
-  looked on any chosen date -- e.g. the economy as visible in September 2008
-  vs what we now know was happening.
+- **Data revisions**: built on ALFRED vintage data. GDP growth and payroll
+  gains as first reported vs today's estimate (computed within vintages, so
+  benchmark rebasings of the level can't distort it), NBER recessions shaded
+  on every chart, and a "time machine" that reconstructs unemployment,
+  housing starts, or payrolls exactly as they looked on any chosen date --
+  e.g. the economy as visible in September 2008 vs what we now know was
+  happening, with a table of the biggest then-vs-now gaps in that window.
 
 ## FRED Indicators
 
