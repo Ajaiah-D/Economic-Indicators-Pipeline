@@ -161,6 +161,14 @@ def inject_css() -> None:
         div[data-testid="stButtonGroup"] button p {{
             font-size: 0.82rem;
         }}
+        /* on narrow phones the 350px sidebar overlay can exceed the viewport
+           itself; cap it to a share of screen width so it never runs off-screen */
+        @media (max-width: 640px) {{
+            section[data-testid="stSidebar"] {{
+                width: min(350px, 88vw) !important;
+                min-width: 240px !important;
+            }}
+        }}
 
         .hero-title {{
             font-size: 2.15rem;
