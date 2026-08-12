@@ -300,12 +300,18 @@ def choropleth(df: pd.DataFrame, total_states: int) -> None:
     # the iframe's first paint can happen before it has its final size, which
     # leaves the geo paths drawn at the wrong scale even though plotly's
     # internal projection state is correct; one deferred redraw repaints from
-    # that (correct) state
+    # that (correct) state. Same pass also shrinks the map to fit narrow
+    # (phone-width) iframes -- a single one-time relayout, not Plotly's
+    # "responsive" auto-resize, which is what collapses the USA projection.
     html = html.replace(
         "</body>",
         "<script>window.addEventListener('load',function(){setTimeout(function(){"
         "var gd=document.querySelector('.js-plotly-plot');"
-        "if(gd&&window.Plotly){Plotly.redraw(gd);}},400);});</script></body>",
+        "if(!gd||!window.Plotly)return;"
+        "var w=Math.min(880,document.documentElement.clientWidth||880);"
+        "if(w<860){Plotly.relayout(gd,{width:w,height:Math.round(w*470/880)});}"
+        "Plotly.redraw(gd);"
+        "},400);});</script></body>",
     )
     components.html(html, height=490)
     st.caption(f"{choice}, latest reading per state (as of {asof_str}).")
