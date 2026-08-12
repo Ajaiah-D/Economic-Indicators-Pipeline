@@ -24,6 +24,7 @@ PROCESSED_KEY = "processed/economic_indicators/part-0.parquet"
 INDICATORS = {
     "CPIAUCSL": "cpi",
     "UNRATE": "unemployment_rate",
+    "U6RATE": "u6_rate",
     "GDP": "gdp",
     "FEDFUNDS": "fed_funds_rate",
     "HOUST": "housing_starts",

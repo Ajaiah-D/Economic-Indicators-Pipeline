@@ -16,6 +16,7 @@ with source as (
 
         cast(cpi               as double) as cpi,
         cast(unemployment_rate as double) as unemployment_rate,
+        cast(u6_rate           as double) as u6_rate,
         cast(gdp               as double) as gdp,
         cast(fed_funds_rate    as double) as fed_funds_rate,
         cast(housing_starts    as double) as housing_starts,
@@ -23,6 +24,7 @@ with source as (
 
         cast(cpi_mom_pct               as double) as cpi_mom_pct,
         cast(unemployment_rate_mom_pct  as double) as unemployment_rate_mom_pct,
+        cast(u6_rate_mom_pct           as double) as u6_rate_mom_pct,
         cast(gdp_mom_pct               as double) as gdp_mom_pct,
         cast(fed_funds_rate_mom_pct    as double) as fed_funds_rate_mom_pct,
         cast(housing_starts_mom_pct    as double) as housing_starts_mom_pct,
@@ -30,6 +32,7 @@ with source as (
 
         cast(cpi_3m_avg               as double) as cpi_3m_avg,
         cast(unemployment_rate_3m_avg  as double) as unemployment_rate_3m_avg,
+        cast(u6_rate_3m_avg           as double) as u6_rate_3m_avg,
         cast(gdp_3m_avg               as double) as gdp_3m_avg,
         cast(fed_funds_rate_3m_avg    as double) as fed_funds_rate_3m_avg,
         cast(housing_starts_3m_avg    as double) as housing_starts_3m_avg,
