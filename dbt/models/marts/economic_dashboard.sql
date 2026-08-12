@@ -19,6 +19,7 @@ select
 
     cpi,
     unemployment_rate,
+    u6_rate,
     gdp,
     fed_funds_rate,
     housing_starts,
@@ -26,6 +27,7 @@ select
 
     cpi_mom_pct,
     unemployment_rate_mom_pct,
+    u6_rate_mom_pct,
     gdp_mom_pct,
     fed_funds_rate_mom_pct,
     housing_starts_mom_pct,
@@ -33,6 +35,7 @@ select
 
     cpi_3m_avg,
     unemployment_rate_3m_avg,
+    u6_rate_3m_avg,
     gdp_3m_avg,
     fed_funds_rate_3m_avg,
     housing_starts_3m_avg,

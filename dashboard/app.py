@@ -44,7 +44,8 @@ S3_PARQUET_KEY = "processed/economic_indicators"
 
 INDICATOR_META = {
     "cpi":                {"label": "CPI",                "short": "CPI",        "unit": "Index (1982-84=100)", "fmt": "{:,.1f}", "color": "#2a78d6"},
-    "unemployment_rate":  {"label": "Unemployment Rate",  "short": "Unemp.",     "unit": "%",                   "fmt": "{:,.1f}%", "color": "#1baf7a"},
+    "unemployment_rate":  {"label": "Unemployment Rate (U-3)", "short": "Unemp. (U-3)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#1baf7a"},
+    "u6_rate":            {"label": "Unemployment Rate (U-6)", "short": "Unemp. (U-6)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#0d8f5c"},
     "gdp":                {"label": "GDP",                "short": "GDP",        "unit": "Billions USD",        "fmt": "${:,.0f}B", "color": "#c98500"},
     "fed_funds_rate":     {"label": "Fed Funds Rate",     "short": "Fed Funds",  "unit": "%",                   "fmt": "{:,.2f}%", "color": "#008300"},
     "housing_starts":     {"label": "Housing Starts",     "short": "Housing",    "unit": "Thousands of units",  "fmt": "{:,.0f}K", "color": "#4a3aa7"},
@@ -64,7 +65,7 @@ FLAG_DESCRIPTIONS = {
 
 # monthly level series -- a month is "complete" once these have published. GDP
 # is quarterly and publishes late, so it's deliberately not in this list.
-MONTHLY_CORE = ["cpi", "unemployment_rate", "housing_starts", "consumer_sentiment"]
+MONTHLY_CORE = ["cpi", "unemployment_rate", "u6_rate", "housing_starts", "consumer_sentiment"]
 
 KPI_TILES_PER_ROW = 3
 
@@ -74,8 +75,12 @@ GLOSSARY = {
         "context": "Historically healthy: rising ~2%/yr, the Fed's long-run target. Watch for: annualised increases above ~3-4% (overheating/inflation risk) or an outright decline (deflation, usually a sign of collapsing demand).",
     },
     "unemployment_rate": {
-        "what": "The U-3 unemployment rate: the share of the labor force that is jobless and actively looking for work.",
-        "context": "Historically healthy: roughly 3.5-4.5% is considered \"full employment.\" Watch for: a rate climbing above ~6% signals real economic slack; the trend matters more than the level, since a rise of 0.5pp or more off its recent low (the \"Sahm rule\") has reliably flagged past recessions.",
+        "what": "The U-3 unemployment rate: the share of the labor force that is jobless and actively looking for work. This is the headline figure quoted in most news coverage and used as the Fed's standard labor-market benchmark.",
+        "context": "Historically healthy: roughly 3.5-4.5% is considered \"full employment.\" Watch for: a rate climbing above ~6% signals real economic slack; the trend matters more than the level, since a rise of 0.5pp or more off its recent low (the \"Sahm rule\") has reliably flagged past recessions. U-3 excludes discouraged workers who've stopped looking and people stuck in part-time work who want full-time hours -- see U-6 for a broader measure of that slack.",
+    },
+    "u6_rate": {
+        "what": "The U-6 unemployment rate: U-3 plus discouraged/marginally attached workers (want a job, looked in the past year, but not the past 4 weeks) and people working part-time only because they can't find full-time work. The broadest of BLS's six official unemployment measures (U-1 through U-6).",
+        "context": "Historically healthy: roughly 7-8% in a strong labor market, since it always runs above U-3 (typically by 3.5-4.5 points). Watch for: the gap between U-6 and U-3 widening is itself a signal -- it means underemployment (involuntary part-time, discouraged workers) is growing even if the headline rate looks stable.",
     },
     "gdp": {
         "what": "Gross Domestic Product: the total dollar value of goods and services produced in the U.S., reported quarterly.",
@@ -336,6 +341,9 @@ def _demo_data() -> pd.DataFrame:
     df = pd.DataFrame({"date": rng})
     df["cpi"]                = rand_walk(215, 0.3, 0.5, len(rng))
     df["unemployment_rate"]  = np.clip(rand_walk(6.5, -0.02, 0.2, len(rng)), 2, 15)
+    # U-6 always sits above U-3 (it's a superset); model it as U-3 plus a
+    # noisy spread rather than an independent walk so the two never invert
+    df["u6_rate"]            = df["unemployment_rate"] + np.clip(rand_walk(4.0, 0, 0.15, len(rng)), 2, 10)
     df["gdp"]                = rand_walk(15000, 50, 80, len(rng))
     df["fed_funds_rate"]     = np.clip(rand_walk(2, 0.01, 0.15, len(rng)), 0, 8)
     df["housing_starts"]     = np.clip(rand_walk(1200, 0, 50, len(rng)), 500, 2000)

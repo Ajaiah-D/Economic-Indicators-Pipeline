@@ -28,7 +28,11 @@ Streamlit dashboard serves the result, refreshed daily.
   automatically from the data**: it diffs the latest complete month against
   the prior one and scans each series' full history so it can say "housing
   starts fell 15%, the sharpest monthly drop since 2024, activating a stress
-  flag" instead of just showing numbers.
+  flag" instead of just showing numbers. Unemployment is shown as both
+  **U-3** (the standard headline rate) and **U-6** (adds discouraged
+  workers and involuntary part-time employment, a broader read on labor
+  slack) side by side; the recession-signal flag stays keyed to U-3 since
+  that's what it was backtested against.
 - **State by state**: unemployment (monthly), FHFA house-price growth
   (quarterly), and per-capita income (annual) for all 50 states + DC; each
   state ranked against the field, charted against the U.S., and mapped on a
@@ -46,7 +50,8 @@ Streamlit dashboard serves the result, refreshed daily.
 | Series ID   | Label                | Frequency | Units                    |
 |-------------|----------------------|-----------|--------------------------|
 | CPIAUCSL    | CPI                  | Monthly   | Index (1982-84 = 100)    |
-| UNRATE      | Unemployment Rate    | Monthly   | Percent                  |
+| UNRATE      | Unemployment Rate (U-3) | Monthly | Percent                |
+| U6RATE      | Unemployment Rate (U-6) | Monthly | Percent                |
 | GDP         | GDP                  | Quarterly | Billions of USD          |
 | FEDFUNDS    | Fed Funds Rate       | Monthly   | Percent                  |
 | HOUST       | Housing Starts       | Monthly   | Thousands of units       |
@@ -60,7 +65,11 @@ Beyond these, the pipeline also ingests:
 
 - **State-level** (~150 series): `{ST}UR` unemployment rate (monthly), `{ST}STHPI`
   FHFA all-transactions house price index (quarterly), and `{ST}PCPI` per-capita
-  personal income (annual) for all 50 states + DC.
+  personal income (annual) for all 50 states + DC. State-level unemployment is
+  U-3 only -- BLS's state-level U-6 series (e.g. `U6UNEM6CA`) are quarterly,
+  not seasonally adjusted, reported as a 4-quarter moving average, and run
+  over a year stale, too different in kind from the current monthly U-3 data
+  to mix into the same page without misleading readers.
 - **Vintages** (ALFRED): every value ever published for GDP, PAYEMS (nonfarm
   payrolls), UNRATE, and HOUST -- one row per (observation date, release date).
 

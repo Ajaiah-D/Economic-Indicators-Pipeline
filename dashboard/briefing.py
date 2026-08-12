@@ -38,11 +38,12 @@ FLAG_TO_INDICATOR = {
 
 # monthly series a month needs before its briefing is meaningful (GDP is
 # quarterly and late; the signal page applies the same rule)
-MONTHLY_CORE = ["cpi", "unemployment_rate", "housing_starts", "consumer_sentiment"]
+MONTHLY_CORE = ["cpi", "unemployment_rate", "u6_rate", "housing_starts", "consumer_sentiment"]
 
 QUIET_LABELS = {
     "cpi": "inflation",
     "unemployment_rate": "unemployment",
+    "u6_rate": "broader (U-6) unemployment",
     "gdp": "GDP",
     "fed_funds_rate": "the fed funds rate",
     "housing_starts": "housing starts",
@@ -220,7 +221,29 @@ def _unemployment(hist: pd.DataFrame) -> tuple[BriefingItem | None, bool]:
     ]
     verb = "rose" if delta > 0 else ("fell" if delta < 0 else "held")
     base = (
-        f"<strong>Unemployment</strong> {verb} to {cur:.1f}%"
+        f"<strong>U-3 unemployment</strong> {verb} to {cur:.1f}%"
+        + (f" (from {prv:.1f}%)" if delta != 0 else "")
+    )
+    notable = abs(delta) >= 0.1 or any(notes)
+    return BriefingItem(_join_notes(base, notes), _tone(delta, +1)), notable
+
+
+def _u6_unemployment(hist: pd.DataFrame) -> tuple[BriefingItem | None, bool]:
+    s = _series(hist, "u6_rate")
+    if len(s) < 2:
+        return None, False
+    cur, prv = s["u6_rate"].iloc[-1], s["u6_rate"].iloc[-2]
+    delta = cur - prv
+    changes = s["u6_rate"].diff()
+    notes = [
+        _streak_note(s["date"], changes),
+        _move_note(s["date"], changes),
+        _extreme_note(s["date"], s["u6_rate"]),
+    ]
+    verb = "rose" if delta > 0 else ("fell" if delta < 0 else "held")
+    base = (
+        f"<strong>U-6 unemployment</strong> (includes discouraged and "
+        f"involuntary part-time workers) {verb} to {cur:.1f}%"
         + (f" (from {prv:.1f}%)" if delta != 0 else "")
     )
     notable = abs(delta) >= 0.1 or any(notes)
@@ -362,6 +385,7 @@ def build_briefing(df: pd.DataFrame) -> Briefing | None:
 
     builders = {
         "unemployment_rate": lambda: _unemployment(hist),
+        "u6_rate": lambda: _u6_unemployment(hist),
         "cpi": lambda: _inflation(hist),
         "gdp": lambda: _gdp(hist, latest_date),
         "fed_funds_rate": lambda: _fed_funds(hist),

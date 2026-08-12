@@ -29,6 +29,7 @@ PROCESSED_PATH = f"s3a://{BUCKET}/processed/economic_indicators"
 INDICATORS = {
     "CPIAUCSL": "cpi",
     "UNRATE": "unemployment_rate",
+    "U6RATE": "u6_rate",
     "GDP": "gdp",
     "FEDFUNDS": "fed_funds_rate",
     "HOUST": "housing_starts",
