@@ -1,10 +1,22 @@
+# Surface colours here MUST mirror the tokens in dashboard/theme.py. Streamlit
+# paints its own chrome (widgets, dataframes, the settings menu) from this file,
+# while our injected CSS paints everything else from theme.py -- if the two
+# drift you get several slightly different whites on one screen, which reads as
+# a rendering bug rather than as hierarchy.
+
 [theme]
 base = "light"
-primaryColor = "#2a78d6"
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f2f1ed"
-textColor = "#0b0b0b"
+primaryColor = "#2a78d6"              # unchanged: series/accent blue
+backgroundColor = "#eeece6"           # theme.PAGE
+secondaryBackgroundColor = "#f8f7f3"  # theme.SURFACE -- widget fills match card fills
+textColor = "#0b0b0b"                 # theme.INK_PRIMARY
+borderColor = "#d9d7cf"               # theme.GRIDLINE -- st.container(border=True) picks this up
 font = "sans serif"
+
+[theme.sidebar]
+backgroundColor = "#e9e7e0"           # theme.SIDEBAR -- one step below PAGE
+secondaryBackgroundColor = "#f8f7f3"  # widgets stay on the light card surface
+borderColor = "#d9d7cf"
 
 [browser]
 gatherUsageStats = false

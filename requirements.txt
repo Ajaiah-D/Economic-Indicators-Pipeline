@@ -5,7 +5,9 @@
 # upper bounds cap at the next untested major version -- pandas 3.0 already
 # broke this project once (a read_json signature change), so floor-only
 # pins are a real risk on a repo that won't be watched closely
-streamlit>=1.40,<2
+# >=1.51 for the [theme.sidebar] table used in .streamlit/config.toml
+# ([theme.sidebar] landed in 1.47, [theme.light]/[theme.dark] in 1.51).
+streamlit>=1.51,<2
 plotly>=5.22,<7
 pandas>=2.2,<4
 pyarrow>=16,<25
