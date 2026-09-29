@@ -138,7 +138,7 @@ def kpi_row(sdf: pd.DataFrame, total_states: int) -> None:
     c1, c2, c3 = st.columns(3, gap="medium")
 
     ur = sdf.dropna(subset=["unemployment_rate"])
-    with c1.container(border=True):
+    with c1.container(border=True, key="statcard_st1"):
         if ur.empty:
             st.metric("Unemployment rate", "N/A")
         else:
@@ -154,7 +154,7 @@ def kpi_row(sdf: pd.DataFrame, total_states: int) -> None:
             )
 
     hpi = sdf.dropna(subset=["house_price_index_yoy_pct"])
-    with c2.container(border=True):
+    with c2.container(border=True, key="statcard_st2"):
         if hpi.empty:
             st.metric("House-price growth", "N/A")
         else:
@@ -167,7 +167,7 @@ def kpi_row(sdf: pd.DataFrame, total_states: int) -> None:
             )
 
     inc = sdf.dropna(subset=["per_capita_income"])
-    with c3.container(border=True):
+    with c3.container(border=True, key="statcard_st3"):
         if inc.empty:
             st.metric("Per-capita income", "N/A")
         else:

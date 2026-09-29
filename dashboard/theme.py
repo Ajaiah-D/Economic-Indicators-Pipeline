@@ -10,19 +10,33 @@ import plotly.graph_objects as go
 
 FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 
-# colourblind-safe ink/surface tokens, validated in the original design pass
+# Colourblind-safe ink/surface tokens. These are the single source of truth for
+# every surface in the app -- .streamlit/config.toml mirrors them, and nothing
+# should hardcode a background or border hex anywhere else.
+#
+# Surfaces deliberately avoid pure white: the page sits at ~84% relative
+# luminance rather than the ~92% it used to, because a near-100% full-field
+# emitter is uncomfortable in a dim room. Card-vs-page fill separation is only
+# ~1.10:1 at these luminances (too small to perceive on its own), so GRIDLINE
+# borders carry the structure, not the fill difference.
+#
+#   INK_MUTED  4.9:1 on PAGE, 5.4:1 on SURFACE, 4.7:1 on SIDEBAR -- AA everywhere
+#   GRIDLINE   1.22:1 on PAGE -- visible enough to bound a card
 INK_PRIMARY = "#0b0b0b"
 INK_SECONDARY = "#52514e"
-INK_MUTED = "#898781"
-GRIDLINE = "#e8e7e1"
-SURFACE = "#ffffff"
-PAGE = "#f7f6f3"
+INK_MUTED = "#67655f"
+GRIDLINE = "#d9d7cf"
+SURFACE = "#f8f7f3"
+PAGE = "#eeece6"
+SIDEBAR = "#e9e7e0"
 
-# reserved status colours -- never reused as series colours
+# Reserved status colours -- never reused as series colours. All four clear
+# 3:1 against PAGE (WCAG 1.4.11, graphical objects); `warning` and `serious`
+# were darkened from #e0940a/#ec835a, which sat at 2.1:1 and 2.2:1.
 STATUS = {
-    "good": "#0ca30c",
-    "warning": "#e0940a",
-    "serious": "#ec835a",
+    "good": "#0b9a0b",
+    "warning": "#b67706",
+    "serious": "#c56c4a",
     "critical": "#d03b3b",
 }
 

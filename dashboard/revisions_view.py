@@ -35,7 +35,7 @@ VINTAGE_SNAPSHOT = REPO_ROOT / "data" / "vintage_dashboard.parquet"
 S3_KEY = "processed/fred_vintages/part-0.parquet"
 
 FIRST_PRINT = "#1b4f96"   # first-release markers
-LATEST = "#c98500"        # latest-revision bars
+LATEST = "#b57700"        # latest-revision bars (matches the GDP amber)
 THEN_LINE = "#2a78d6"     # time-machine "known then"
 NOW_LINE = INK_MUTED      # time-machine "known now"
 
@@ -185,16 +185,16 @@ def stat_tiles(rev: pd.DataFrame) -> None:
     avg_abs = rev["revision_pp"].abs().mean()
 
     c1, c2, c3 = st.columns(3, gap="medium")
-    with c1.container(border=True):
+    with c1.container(border=True, key="statcard_rev1"):
         st.metric("Quarters whose growth later flipped sign", f"{flips} of {total}")
         st.markdown('<div class="tile-asof">reported growth when the economy was shrinking, or vice versa</div>',
                     unsafe_allow_html=True)
-    with c2.container(border=True):
+    with c2.container(border=True, key="statcard_rev2"):
         st.metric("Largest single revision", f"{worst['revision_pp']:+.1f}pp",
                   delta=_quarter(worst["date"]), delta_color="off")
         st.markdown('<div class="tile-asof">difference between the first print and today\'s estimate</div>',
                     unsafe_allow_html=True)
-    with c3.container(border=True):
+    with c3.container(border=True, key="statcard_rev3"):
         st.metric("Average revision size", f"{avg_abs:.2f}pp")
         st.markdown('<div class="tile-asof">mean absolute change in quarterly growth since first print</div>',
                     unsafe_allow_html=True)

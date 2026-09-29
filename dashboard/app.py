@@ -20,6 +20,7 @@ from theme import (
     INK_PRIMARY,
     INK_SECONDARY,
     PAGE,
+    SIDEBAR,
     STATUS,
     SURFACE,
     base_layout,
@@ -42,15 +43,26 @@ LOCAL_SNAPSHOT_PARQUET = REPO_ROOT / "data" / "economic_dashboard.parquet"
 LAST_UPDATED_JSON = REPO_ROOT / "data" / "last_updated.json"
 S3_PARQUET_KEY = "processed/economic_indicators"
 
+# Series colours. Every value clears 3:1 against theme.PAGE (WCAG 1.4.11,
+# graphical objects) -- U-3, GDP and the yield spread used to sit at 2.4/2.6/2.3
+# and were darkened along their own hue. U-6 was pushed well past its 3:1
+# requirement on purpose: it sits in the same green family as U-3 (it's a
+# superset of it) and the two are plotted together, so it needs the lightness
+# gap to stay tellable apart.
+#
+# KNOWN LIMITATION: this palette is safe for protanopia and deuteranopia but
+# NOT for tritanopia, where U-3 and Housing converge (OKLab dE 0.035). Three of
+# the eight series are greens (U-3, U-6, Fed Funds), which is the root cause;
+# fixing it properly means moving one of them off green entirely.
 INDICATOR_META = {
     "cpi":                {"label": "CPI",                "short": "CPI",        "unit": "Index (1982-84=100)", "fmt": "{:,.1f}", "color": "#2a78d6"},
-    "unemployment_rate":  {"label": "Unemployment Rate (U-3)", "short": "Unemp. (U-3)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#1baf7a"},
-    "u6_rate":            {"label": "Unemployment Rate (U-6)", "short": "Unemp. (U-6)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#0d8f5c"},
-    "gdp":                {"label": "GDP",                "short": "GDP",        "unit": "Billions USD",        "fmt": "${:,.0f}B", "color": "#c98500"},
+    "unemployment_rate":  {"label": "Unemployment Rate (U-3)", "short": "Unemp. (U-3)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#169668"},
+    "u6_rate":            {"label": "Unemployment Rate (U-6)", "short": "Unemp. (U-6)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#064f30"},
+    "gdp":                {"label": "GDP",                "short": "GDP",        "unit": "Billions USD",        "fmt": "${:,.0f}B", "color": "#b57700"},
     "fed_funds_rate":     {"label": "Fed Funds Rate",     "short": "Fed Funds",  "unit": "%",                   "fmt": "{:,.2f}%", "color": "#008300"},
     "housing_starts":     {"label": "Housing Starts",     "short": "Housing",    "unit": "Thousands of units",  "fmt": "{:,.0f}K", "color": "#4a3aa7"},
     "consumer_sentiment": {"label": "Consumer Sentiment", "short": "Sentiment",  "unit": "Index",               "fmt": "{:,.1f}", "color": "#e34948"},
-    "yield_spread":       {"label": "10Y-3M Treasury Spread", "short": "Yield Spread", "unit": "points",       "fmt": "{:+.2f}pt", "color": "#e87ba4"},
+    "yield_spread":       {"label": "10Y-3M Treasury Spread", "short": "Yield Spread", "unit": "points",       "fmt": "{:+.2f}pt", "color": "#c3678a"},
 }
 
 FLAG_DESCRIPTIONS = {
@@ -114,10 +126,14 @@ def inject_css() -> None:
         <style>
         .stApp {{ background: {PAGE}; }}
         html, body, [class*="css"] {{ font-family: {FONT}; }}
+        /* 1240px left ~660px of dead gutter each side on a 2560px display,
+           which reads as emptiness rather than as breathing room. A dashboard
+           is scanned and compared, not read like prose, so it wants a denser
+           measure than an article would. */
         .block-container {{
-            padding-top: 2.4rem;
-            padding-bottom: 3rem;
-            max-width: 1240px;
+            padding-top: 1.8rem;
+            padding-bottom: 2rem;
+            max-width: 1440px;
         }}
         footer {{ visibility: hidden; }}
         header[data-testid="stHeader"] {{ background: transparent; }}
@@ -127,7 +143,7 @@ def inject_css() -> None:
         section[data-testid="stSidebar"] {{
             width: 350px !important;
             min-width: 350px !important;
-            background: #fbfaf8;
+            background: {SIDEBAR};
             border-right: 1px solid {GRIDLINE};
         }}
         /* nav page links */
@@ -195,6 +211,12 @@ def inject_css() -> None:
             box-shadow: 0 0 0 3px {STATUS['good']}22;
         }}
 
+        /* Streamlit's default block gap and divider margins are tuned for
+           prose-length pages. A dashboard is scanned, so the same spacing
+           reads as dead air -- pull both in a notch. */
+        div[data-testid="stVerticalBlock"] {{ gap: 0.85rem; }}
+        hr {{ margin: 1.1rem 0 !important; }}
+
         .section-label {{
             font-size: 0.76rem;
             font-weight: 650;
@@ -204,10 +226,16 @@ def inject_css() -> None:
             margin: 0.2rem 0 0.7rem 0;
         }}
 
-        /* bordered stat-tile containers */
-        div[data-testid="stVerticalBlockBorderWrapper"] {{
+        /* Bordered stat-tile containers.
+           NOTE: these are matched via the `st-key-statcard-*` class that
+           Streamlit emits for `st.container(key=...)`, NOT via a data-testid.
+           The old `stVerticalBlockBorderWrapper` testid this used to target no
+           longer exists, so that rule had silently stopped applying and the
+           tiles were rendering unfilled. Keys are the documented, stable hook. */
+        div[class*="st-key-statcard"] {{
             background: {SURFACE};
             border-radius: 14px;
+            padding: 0.85rem 1rem;
         }}
         div[data-testid="stMetric"] {{
             background: transparent;
@@ -280,7 +308,7 @@ def inject_css() -> None:
         .brief-quiet {{ color: {INK_MUTED}; font-size: 0.84rem; margin-top: 0.55rem; }}
 
         .footer {{
-            margin-top: 2.5rem; padding-top: 1rem;
+            margin-top: 2rem; padding-top: 1rem;
             border-top: 1px solid {GRIDLINE};
             color: {INK_MUTED}; font-size: 0.8rem;
             display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
@@ -540,7 +568,7 @@ def kpi_grid(df: pd.DataFrame, selected: list[str]) -> None:
         row_keys = selected[row_start:row_start + KPI_TILES_PER_ROW]
         cols = st.columns(KPI_TILES_PER_ROW, gap="medium")
         for col, key in zip(cols, row_keys):
-            with col.container(border=True):
+            with col.container(border=True, key=f"statcard_{key}"):
                 _kpi_tile(df, key)
         for col in cols[len(row_keys):]:
             col.empty()
@@ -638,7 +666,7 @@ def signal_history(df: pd.DataFrame) -> None:
     fig2 = go.Figure(go.Heatmap(
         z=z, x=heat.index, y=[FLAG_DESCRIPTIONS[c] for c in flag_cols],
         xgap=0, ygap=5, showscale=False,
-        colorscale=[[0, "#efeee9"], [1, STATUS["critical"]]],
+        colorscale=[[0, "#e5e3da"], [1, STATUS["critical"]]],
         zmin=0, zmax=1,
         hovertemplate="%{y}<br>%{x|%b %Y}: %{customdata}<extra></extra>",
         customdata=[["Active" if v else "Inactive" for v in row] for row in z],
