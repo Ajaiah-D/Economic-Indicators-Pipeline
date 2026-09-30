@@ -14,7 +14,7 @@ Streamlit dashboard serves the result, refreshed daily.
 
 ## Architecture
 
-1. **Ingestion** (`ingestion/`) pulls from the FRED API and writes timestamped CSVs to S3: `fetch_fred.py` for the eight national series, `fetch_fred_states.py` for ~150 state-level series (rate-limited batch), and `fetch_fred_vintages.py` for ALFRED vintage data -- every value each series has ever published.
+1. **Ingestion** (`ingestion/`) pulls from the FRED API and writes timestamped CSVs to S3: `fetch_fred.py` for the nine national series, `fetch_fred_states.py` for ~150 state-level series (rate-limited batch), and `fetch_fred_vintages.py` for ALFRED vintage data -- every value each series has ever published.
 2. **Orchestration** (`dags/fred_ingestion_dag.py`) runs the national ingestion on a daily Airflow DAG (TaskFlow API), one fetch/write task pair per indicator, with retries and exponential backoff.
 3. **Transform** (`spark/`) reads the raw CSVs and writes processed Parquet back to S3: national wide table with MoM % change, 3-month rolling averages, and the 10Y-3M Treasury spread; a long state table with per-state YoY changes computed at each indicator's native frequency; and a long vintage table keyed by (series, observation date, release date).
 4. **Modeling** (`dbt/`) builds staging views and materialized marts with dbt-duckdb: the national mart adds seven binary stress flags + a composite signal score, the state mart adds per-date ranks across the 51-state field, and the vintage mart adds first-print / latest-revision window columns.
@@ -152,7 +152,7 @@ cp .env.example .env
 ### 1. Ingest from FRED to S3
 
 ```bash
-python ingestion/fetch_fred.py           # 8 national series
+python ingestion/fetch_fred.py           # 9 national series
 python ingestion/fetch_fred_states.py    # ~150 state series (takes ~90s, rate-limited)
 python ingestion/fetch_fred_vintages.py  # ALFRED vintages for 4 series
 ```
@@ -274,8 +274,8 @@ recessions. Against all 9 NBER-recognized recessions since 1959:
   flag and raising the bar to 4 of 7 cuts the flagged rate to about 18% of months and lifts
   precision to about 56%, all without losing a single recession from the backtest.
 - Trade-off: 2 of the 9 recessions (1960 and 2020) only cross the 4-flag bar during the
-  recession itself rather than ahead of it, both were unusually short recessions. The other
-  7 still get 5-6 months of lead time, unchanged from the 6-flag version.
+  recession itself rather than ahead of it, both were unusually short recessions. Of the other
+  7, six get 5-6 months of lead time; 1990 got only 1 month.
 - Also tested: requiring the yield curve to be inverted as a hard gate (score>=3 of the
   other 6 AND yield inverted) pushes precision to ~66%, but drops recall to 7 of 9, missing
   1960 and 2020 entirely. Rejected for the same reason the persistence filter was rejected
