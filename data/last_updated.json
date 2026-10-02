@@ -1,11 +1,11 @@
 {
-  "last_updated_utc": "2026-10-01T18:17:02+00:00",
+  "last_updated_utc": "2026-10-02T17:41:07+00:00",
   "tables": {
     "economic_dashboard": {
-      "row_count": 1112,
+      "row_count": 1113,
       "date_range": {
         "start": "1934-01-01",
-        "end": "2026-08-01"
+        "end": "2026-09-01"
       }
     },
     "state_dashboard": {
@@ -16,16 +16,16 @@
       }
     },
     "vintage_dashboard": {
-      "row_count": 23505,
+      "row_count": 23509,
       "date_range": {
         "start": "1939-01-01",
-        "end": "2026-08-01"
+        "end": "2026-09-01"
       }
     }
   },
-  "row_count": 1112,
+  "row_count": 1113,
   "date_range": {
     "start": "1934-01-01",
-    "end": "2026-08-01"
+    "end": "2026-09-01"
   }
 }
