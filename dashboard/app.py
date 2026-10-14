@@ -95,8 +95,8 @@ GLOSSARY = {
         "context": "Historically healthy: roughly 7-8% in a strong labor market, since it always runs above U-3 (typically by 3.5-4.5 points). Watch for: the gap between U-6 and U-3 widening is itself a signal -- it means underemployment (involuntary part-time, discouraged workers) is growing even if the headline rate looks stable.",
     },
     "gdp": {
-        "what": "Gross Domestic Product: the total dollar value of goods and services produced in the U.S., reported quarterly.",
-        "context": "Historically healthy: steady growth around 2-3% annualised. Watch for: two consecutive quarters of contraction is the textbook definition of a recession; a sharp deceleration is itself a warning sign even before it turns negative.",
+        "what": "Gross Domestic Product: the total dollar value of goods and services produced in the U.S., reported quarterly. This is nominal GDP (current dollars, not adjusted for inflation).",
+        "context": "Historically healthy: nominal GDP (the series used here, in current dollars) growing roughly 1-1.5% per quarter, which is about 2-3% real growth plus inflation. Watch for: two consecutive quarters of contraction is the textbook definition of a recession; a sharp deceleration is itself a warning sign even before it turns negative.",
     },
     "fed_funds_rate": {
         "what": "The effective federal funds rate: the interest rate the Federal Reserve targets for overnight bank lending, its primary lever for monetary policy.",
