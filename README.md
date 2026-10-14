@@ -104,7 +104,9 @@ Economic-Indicators-Pipeline/
 │   ├── revisions_view.py              data-revisions page
 │   └── theme.py                       shared design tokens + chart helpers
 ├── scripts/
+│   ├── backtest_signal.py             reproduces the recession-signal backtest
 │   └── export_dashboard_snapshot.py   dbt marts -> committed Parquet snapshots
+├── tests/                              pytest suite (run in CI)
 ├── data/
 │   ├── economic_dashboard.parquet     committed snapshots, refreshed daily
 │   ├── state_dashboard.parquet
@@ -313,8 +315,10 @@ reaches 4+ anywhere in that same span. Lead time is measured inside that 6-month
 Two limits on how far to trust this. The thresholds were tuned on the same 9 recessions they
 are scored against, so these are in-sample figures, not a forecast record. And the backtest
 uses today's revised data, not the first-print values that were available at the time (the
-data-revisions page shows how different those can be). The analysis was run ad hoc; the
-script is not in this repo.
+data-revisions page shows how different those can be).
+Reproduce it with `python scripts/backtest_signal.py`, which reads the
+committed snapshot; `tests/test_backtest_signal.py` fails the build if a data
+revision ever drops recall below 9 of 9.
 
 Even at ~56% precision, this is a broad stress gauge, not a precise predictor: a little under
 half of flagged months turn out not to be near an actual recession. Useful as one input among
