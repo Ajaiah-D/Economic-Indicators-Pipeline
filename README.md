@@ -252,9 +252,11 @@ practice it commits every day: each mart carries a `dbt_updated_at`
 timestamp and `last_updated.json` records the run time, so the files differ
 on every run even when FRED published nothing new.
 
-Known gaps: the ingestion scripts log a failed series and carry on, so a
-failed fetch does not fail the workflow, and there is no alert when a run
-fails.
+If any series fails to fetch or upload, the ingestion script still attempts
+the rest, then exits non-zero. That fails the workflow before transform and
+export, so the dashboard keeps yesterday's snapshot (and its "last update"
+date) instead of publishing a partly stale one, and GitHub emails the
+failure to the repository owner.
 
 **One-time setup:** add these as repository secrets (Settings → Secrets and
 variables → Actions). The workflow pushes with the default `GITHUB_TOKEN`,

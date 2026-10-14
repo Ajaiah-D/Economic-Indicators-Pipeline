@@ -15,6 +15,7 @@ import io
 import json
 import logging
 import os
+import sys
 import time
 from datetime import date, datetime
 
@@ -112,7 +113,7 @@ def upload_to_s3(df: pd.DataFrame, label: str, run_date: date) -> str:
     return key
 
 
-def run_all(run_date: date | None = None) -> list[dict]:
+def run_all(run_date: date | None = None) -> tuple[list[dict], list[dict]]:
     if run_date is None:
         run_date = datetime.utcnow().date()
     fred = _fred_client()
@@ -133,8 +134,13 @@ def run_all(run_date: date | None = None) -> list[dict]:
 
     logger.info("Run complete -- %d indicators uploaded, %d series failed", len(results), len(errors))
     print(json.dumps({"successes": results, "failures": errors}, indent=2))
-    return results
+    return results, errors
+
+
+def main() -> int:
+    _, failures = run_all()
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    run_all()
+    sys.exit(main())
