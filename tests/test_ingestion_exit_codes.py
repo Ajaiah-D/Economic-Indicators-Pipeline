@@ -50,3 +50,41 @@ def test_vintages_exits_1_when_one_series_fails(monkeypatch):
     monkeypatch.setattr(fetch_fred_vintages, "fetch_vintages", fake_fetch)
     monkeypatch.setattr(fetch_fred_vintages, "upload_to_s3", lambda df, label, run_date: "k")
     assert fetch_fred_vintages.main() == 1
+
+
+def test_states_upload_failure_is_recorded_and_other_indicators_still_run(monkeypatch):
+    frame = pd.DataFrame({"date": ["2026-01-01"], "value": [4.0], "state": ["CA"], "series_id": ["CAUR"]})
+    uploaded = []
+
+    def fake_upload(df, label, run_date):
+        if label == "unemployment_rate":
+            raise RuntimeError("S3 is down")
+        uploaded.append(label)
+        return "k"
+
+    monkeypatch.setattr(fetch_fred_states, "_fred_client", lambda: object())
+    monkeypatch.setattr(fetch_fred_states, "fetch_indicator", lambda fred, label, pattern: (frame, []))
+    monkeypatch.setattr(fetch_fred_states, "upload_to_s3", fake_upload)
+
+    successes, failures = fetch_fred_states.run_all()
+    assert uploaded == ["house_price_index", "per_capita_income"]
+    assert [s["label"] for s in successes] == ["house_price_index", "per_capita_income"]
+    assert failures == [{"series_id": "unemployment_rate", "error": "S3 is down"}]
+    assert fetch_fred_states.main() == 1
+
+
+def test_states_exits_0_when_all_succeed(monkeypatch):
+    frame = pd.DataFrame({"date": ["2026-01-01"], "value": [4.0], "state": ["CA"], "series_id": ["CAUR"]})
+    monkeypatch.setattr(fetch_fred_states, "_fred_client", lambda: object())
+    monkeypatch.setattr(fetch_fred_states, "fetch_indicator", lambda fred, label, pattern: (frame, []))
+    monkeypatch.setattr(fetch_fred_states, "upload_to_s3", lambda df, label, run_date: "k")
+    assert fetch_fred_states.main() == 0
+
+
+def test_vintages_exits_0_when_all_succeed(monkeypatch):
+    frame = pd.DataFrame({"date": ["2026-01-01"], "release_date": ["2026-02-01"], "value": [1.0],
+                          "series_id": ["GDP"], "label": ["gdp"]})
+    monkeypatch.setattr(fetch_fred_vintages, "_fred_client", lambda: object())
+    monkeypatch.setattr(fetch_fred_vintages, "fetch_vintages", lambda fred, series_id, label: frame)
+    monkeypatch.setattr(fetch_fred_vintages, "upload_to_s3", lambda df, label, run_date: "k")
+    assert fetch_fred_vintages.main() == 0
