@@ -17,7 +17,7 @@ import logging
 import os
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import boto3
 import pandas as pd
@@ -115,7 +115,7 @@ def upload_to_s3(df: pd.DataFrame, label: str, run_date: date) -> str:
 
 def run_all(run_date: date | None = None) -> tuple[list[dict], list[dict]]:
     if run_date is None:
-        run_date = datetime.utcnow().date()
+        run_date = datetime.now(timezone.utc).date()
     fred = _fred_client()
     results, errors = [], []
     for label, pattern in STATE_INDICATORS.items():
