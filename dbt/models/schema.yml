@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: economic_dashboard
+    description: One row per month. National indicators, seven stress flags, signal score.
+    columns:
+      - name: date
+        data_tests: [unique, not_null]
+      - name: signal_score
+        data_tests: [not_null]
+      - name: recession_watch
+        data_tests: [not_null]
+
+  - name: state_dashboard
+    description: One row per (date, state).
+    columns:
+      - name: date
+        data_tests: [not_null]
+      - name: state
+        data_tests: [not_null]
+
+  - name: vintage_dashboard
+    description: One row per (label, observation date, release date).
+    columns:
+      - name: label
+        data_tests: [not_null]
+      - name: date
+        data_tests: [not_null]
+      - name: release_date
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]

@@ -51,10 +51,10 @@ jobs:
       - name: Transform vintage data, write processed Parquet to S3
         run: python spark/transform_vintages_local.py
 
-      - name: Build dbt models
+      - name: Build dbt models and run data tests
         working-directory: dbt
         run: |
-          dbt run
+          dbt build
 
       - name: Export dashboard snapshot + refresh metadata
         run: python scripts/export_dashboard_snapshot.py

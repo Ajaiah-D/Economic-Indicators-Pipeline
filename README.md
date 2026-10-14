@@ -206,11 +206,15 @@ variables, so no manual profile setup is needed:
 
 ```bash
 cd dbt
-dbt run
+dbt build
 ```
 
-No dbt tests are defined yet, so `dbt test` has nothing to run. The only
-data-quality checks today are the null filters in the staging models.
+`dbt build` runs the models and then the data tests: not-null and unique
+keys on each mart, one-row-per-key checks on the state and vintage grains,
+the signal score equalling the count of active flags, all 51 states present,
+and a freshness check that fails if the newest month is over 120 days old.
+The daily workflow runs the same command, so a failing test blocks the
+snapshot from being committed.
 
 ### 5. Export the dashboard snapshot
 
