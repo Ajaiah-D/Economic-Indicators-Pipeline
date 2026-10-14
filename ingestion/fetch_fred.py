@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import os
+import sys
 from datetime import date, datetime
 
 import boto3
@@ -89,7 +90,7 @@ def fetch_and_upload(series_id: str, label: str, run_date: date | None = None) -
     }
 
 
-def run_all(run_date: date | None = None) -> list[dict]:
+def run_all(run_date: date | None = None) -> tuple[list[dict], list[dict]]:
     results, errors = [], []
     for series_id, label in INDICATORS.items():
         try:
@@ -100,8 +101,15 @@ def run_all(run_date: date | None = None) -> list[dict]:
 
     logger.info("Run complete -- %d succeeded, %d failed", len(results), len(errors))
     print(json.dumps({"successes": results, "failures": errors}, indent=2))
-    return results
+    return results, errors
+
+
+def main() -> int:
+    # every series is still attempted, but any failure fails the run so the
+    # workflow stops before transforming and publishing partly stale data
+    _, failures = run_all()
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    run_all()
+    sys.exit(main())
