@@ -6,7 +6,7 @@ metadata file at data/last_updated.json.
 
 This is what the deployed dashboard reads when there's no local dbt build
 available (e.g. a Streamlit Community Cloud deploy, which only has whatever
-is checked into git). Run this after `dbt run` -- it does not run dbt itself.
+is checked into git). Run this after `dbt build` -- it does not run dbt itself.
 """
 
 import json

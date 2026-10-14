@@ -47,4 +47,3 @@ Thumbs.db
 # local planning and agent scratch files
 docs/superpowers/
 .superpowers/
-.venv.broken/
