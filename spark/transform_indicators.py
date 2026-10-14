@@ -3,8 +3,9 @@ Reads raw indicator CSVs from S3, computes MoM % change and 3-month rolling
 averages for each series, joins them into a single wide table by date, and
 writes the result back to S3 as Parquet.
 
-Designed for Databricks Community Edition. Can also be run locally via
-spark-submit if you have the S3A JARs on the classpath.
+Written for a Databricks cluster (Community Edition, since retired). Can also
+be run locally via spark-submit if you have the S3A JARs on the classpath.
+Not part of the daily refresh, which uses transform_indicators_local.py.
 """
 
 import os
@@ -59,7 +60,8 @@ def get_spark() -> SparkSession:
 
 
 def read_raw_series(spark: SparkSession, series_id: str, label: str) -> DataFrame:
-    # glob across all dated partitions; dedup keeps the latest value per date
+    # glob across all dated partitions; dropDuplicates keeps an arbitrary row
+    # per date, not necessarily the latest snapshot's (the pandas job keeps last)
     path = f"{RAW_BASE}/{label}/*/{series_id}.csv"
     return (
         spark.read

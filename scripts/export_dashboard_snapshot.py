@@ -1,6 +1,7 @@
 """
 Exports the dbt mart tables to committed Parquet snapshots under data/
-(economic_dashboard.parquet, state_dashboard.parquet), and writes a small
+(economic_dashboard.parquet, state_dashboard.parquet,
+vintage_dashboard.parquet), and writes a small
 metadata file at data/last_updated.json.
 
 This is what the deployed dashboard reads when there's no local dbt build

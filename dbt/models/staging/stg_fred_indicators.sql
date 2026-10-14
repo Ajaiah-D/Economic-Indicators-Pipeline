@@ -5,9 +5,9 @@
     )
 }}
 
--- Casts the raw Parquet output from the PySpark job into clean typed columns.
+-- Casts the processed Parquet from the transform job into clean typed columns.
 -- Source: s3://<bucket>/processed/economic_indicators/
--- Use dbt-duckdb + httpfs for local dev, dbt-spark for Databricks.
+-- Read through dbt-duckdb + httpfs (see profiles.yml).
 
 with source as (
 
