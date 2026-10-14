@@ -123,7 +123,13 @@ def run_all(run_date: date | None = None) -> tuple[list[dict], list[dict]]:
         errors.extend(errs)
         if df.empty:
             continue
-        key = upload_to_s3(df, label, run_date)
+        try:
+            key = upload_to_s3(df, label, run_date)
+        except Exception as exc:
+            # upload_to_s3 has already logged the S3 error; record it and
+            # keep going so the other indicators are still attempted
+            errors.append({"series_id": label, "error": str(exc)})
+            continue
         results.append({
             "label": label,
             "rows": len(df),
