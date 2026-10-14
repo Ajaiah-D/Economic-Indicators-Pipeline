@@ -1,0 +1,10 @@
+# What the daily refresh workflow installs. Bounded like requirements.txt so
+# an unattended run cannot pick up a breaking major version.
+fredapi==0.5.1
+boto3>=1.34,<2
+python-dotenv>=1.0,<2
+pandas>=2.2,<4
+pyarrow>=16,<25
+dbt-core>=1.8,<2
+dbt-duckdb>=1.8,<2
+pytest>=8,<9

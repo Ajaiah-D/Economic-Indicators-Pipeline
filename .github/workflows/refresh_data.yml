@@ -31,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install fredapi boto3 python-dotenv pandas pyarrow dbt-core dbt-duckdb
+          pip install -r requirements-refresh.txt
 
       - name: Ingest latest FRED series to S3
         run: python ingestion/fetch_fred.py
@@ -59,14 +59,21 @@ jobs:
       - name: Export dashboard snapshot + refresh metadata
         run: python scripts/export_dashboard_snapshot.py
 
+      - name: Check the refreshed snapshot still passes the signal backtest
+        run: python -m pytest tests/test_backtest_signal.py -q
+
       - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.parquet data/last_updated.json
+          git add data/*.parquet
           if git diff --cached --quiet; then
+            # last_updated.json always carries a new run time; without a data
+            # change it is not worth a commit, so put it back
+            git checkout -- data/last_updated.json
             echo "No data changes -- skipping commit."
           else
+            git add data/last_updated.json
             git commit -m "Refresh dashboard data ($(date -u +%Y-%m-%d))"
             git push
           fi
