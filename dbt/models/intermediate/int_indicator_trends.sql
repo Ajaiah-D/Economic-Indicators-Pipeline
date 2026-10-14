@@ -19,6 +19,20 @@ with staged as (
 
 ),
 
+gdp_available as (
+
+    -- A quarterly GDP print is dated the quarter's first month but published
+    -- about a month after the quarter ends, so it only becomes usable three
+    -- rows later (Q1: dated January, usable from the April row). Using it
+    -- earlier would let the backtest see numbers nobody had at the time.
+    select
+        *,
+        lag(gdp_mom_pct, 3) over (order by date) as gdp_qoq_pct_usable
+
+    from staged
+
+),
+
 lagged as (
 
     select
@@ -30,15 +44,13 @@ lagged as (
             order by date rows between 35 preceding and current row
         ) as fed_funds_rate_36m_avg,
 
-        -- GDP is quarterly: each print sits on the quarter's first month and
-        -- the next two monthly rows are null. Carry the latest print forward
-        -- until the next one so the flag describes the whole quarter instead
-        -- of reading "not contracting" two months out of three.
-        last_value(gdp_mom_pct ignore nulls) over (
+        -- carry the latest usable print forward until the next one, so the
+        -- flag describes the whole quarter it applies to
+        last_value(gdp_qoq_pct_usable ignore nulls) over (
             order by date rows between unbounded preceding and current row
         ) as gdp_qoq_pct_latest
 
-    from staged
+    from gdp_available
 
 ),
 

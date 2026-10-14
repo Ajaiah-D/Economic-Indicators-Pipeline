@@ -402,11 +402,6 @@ def build_briefing(df: pd.DataFrame) -> Briefing | None:
             now, before = bool(latest_row.get(flag)), bool(prev_row.get(flag))
             if now != before:
                 flipped[indicator] = now
-    # the GDP flag rides on a quarterly series: in months with no new GDP
-    # print it evaluates false, which looks like a "cleared" flip that never
-    # actually happened. Only mention it when a fresh quarter landed.
-    if "gdp" in flipped and pd.isna(latest_row.get("gdp_mom_pct")):
-        del flipped["gdp"]
 
     items: list[BriefingItem] = []
     quiet: list[str] = []

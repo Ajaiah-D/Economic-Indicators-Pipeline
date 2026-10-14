@@ -276,7 +276,7 @@ just how many are active at once, 0-7:
 | Flag                        | Condition                                                     |
 |------------------------------|-----------------------------------------------------------------|
 | Unemployment rising          | 3-month avg > 3-month avg from 3 months prior                   |
-| GDP contracting              | Latest published GDP quarter-over-quarter change < 0             |
+| GDP contracting              | Nominal GDP quarter-over-quarter change < 0, from the latest quarter already published |
 | Inflation elevated           | CPI 12-month change > 3%                                        |
 | Fed rate elevated            | Effective funds rate > its own trailing 3-year average + 1pt    |
 | Housing starts declining     | 3-month avg < 3-month avg from 3 months prior                    |
@@ -285,11 +285,14 @@ just how many are active at once, 0-7:
 
 A score of 4 or more trips the **Recession Watch** flag.
 
-GDP is quarterly, and each print sits on the first month of its quarter. The
-flag carries the latest published quarter-over-quarter change forward until
-the next print, so a contracting quarter is flagged in all three of its
-months. The newest months therefore reflect the last quarter that has been
-published, which can be one quarter behind.
+GDP is quarterly. FRED dates each print on the quarter's first month, but it is
+published about a month after the quarter ends, so the signal only uses a print
+from the third month after its date (Q1's print counts from April). It then
+carries that print forward until the next one, so a contracting quarter keeps
+the flag on for three months. This applies in the backtest too: no month sees a
+GDP number that had not been published yet. The series is FRED's `GDP`, which is
+nominal (current dollars); nominal GDP fell in only 11 quarters since 1959, so
+this flag contributes less than a real-GDP flag would.
 
 ### Backtest
 
