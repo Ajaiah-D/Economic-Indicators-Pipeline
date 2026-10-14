@@ -1,7 +1,10 @@
 """
 Daily ingestion DAG for FRED economic indicators.
 
-Six indicator branches (fetch -> upload) all fan into a single log task.
+Seven indicator branches (fetch -> upload) all fan into a single log task.
+Not the production scheduler: the daily refresh runs from
+.github/workflows/refresh_data.yml. This DAG omits the two Treasury series
+(GS10, TB3MS) that ingestion/fetch_fred.py pulls.
 FRED publishes most series monthly, but running daily means we pick up
 any intra-month revisions without manual reruns.
 

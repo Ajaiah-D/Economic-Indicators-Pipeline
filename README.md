@@ -4,9 +4,9 @@ An end-to-end data pipeline over 160+ Federal Reserve (FRED/ALFRED) data
 series: national macro indicators with a backtested recession-risk signal
 and an auto-written monthly briefing, state-level unemployment, house
 prices, and income for all 50 states + DC, and point-in-time vintage data
-showing how first-print numbers were later revised. Ingestion,
-orchestration, and transformation feed dbt models, and a three-page
-Streamlit dashboard serves the result, refreshed daily.
+showing how first-print numbers were later revised. Ingestion and
+transformation feed dbt models, and a three-page Streamlit dashboard serves
+the result, refreshed daily by a scheduled GitHub Actions workflow.
 
 **Live dashboard:** https://ajaiah-d-economic-indicators-pipeline-dashboardapp-d8tih5.streamlit.app/
 
@@ -15,11 +15,11 @@ Streamlit dashboard serves the result, refreshed daily.
 ## Architecture
 
 1. **Ingestion** (`ingestion/`) pulls from the FRED API and writes timestamped CSVs to S3: `fetch_fred.py` for the nine national series, `fetch_fred_states.py` for ~150 state-level series (rate-limited batch), and `fetch_fred_vintages.py` for ALFRED vintage data -- every value each series has ever published.
-2. **Orchestration** (`dags/fred_ingestion_dag.py`) runs the national ingestion on a daily Airflow DAG (TaskFlow API), one fetch/write task pair per indicator, with retries and exponential backoff.
+2. **Orchestration** in production is the GitHub Actions workflow in step 6. `dags/fred_ingestion_dag.py` is an Airflow DAG (TaskFlow API, one fetch/write task pair per indicator, retries with exponential backoff) for running the national ingestion locally; nothing schedules it, and it covers seven of the nine national series (it does not fetch the two Treasury series).
 3. **Transform** (`spark/`) reads the raw CSVs and writes processed Parquet back to S3: national wide table with MoM % change, 3-month rolling averages, and the 10Y-3M Treasury spread; a long state table with per-state YoY changes computed at each indicator's native frequency; and a long vintage table keyed by (series, observation date, release date).
 4. **Modeling** (`dbt/`) builds staging views and materialized marts with dbt-duckdb: the national mart adds seven binary stress flags + a composite signal score, the state mart adds per-date ranks across the 51-state field, and the vintage mart adds first-print / latest-revision window columns.
 5. **Dashboard** (`dashboard/`) is a multi-page Streamlit + Plotly app -- see "Dashboard pages" below.
-6. **Refresh** (`.github/workflows/refresh_data.yml`) runs the whole chain daily and commits small snapshots back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
+6. **Refresh** (`.github/workflows/refresh_data.yml`) runs ingestion, transform, dbt and the snapshot export daily and commits small snapshots back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
 
 ## Dashboard pages
 
@@ -186,11 +186,15 @@ python spark/transform_states_local.py
 python spark/transform_vintages_local.py
 ```
 
-`spark/transform_indicators.py` is the PySpark equivalent, written for a
-larger dataset running on an actual Databricks cluster (Databricks Free
-Edition dropped support for all-purpose clusters, so it now needs a Unity
-Catalog external location to reach S3 rather than a simple access key).
-Either way, the output lands at `s3://<bucket>/processed/economic_indicators/`.
+`spark/transform_indicators.py` is a PySpark version of the national
+transform, written for a larger dataset on a Databricks cluster (Databricks
+Free Edition dropped support for all-purpose clusters, so it now needs a
+Unity Catalog external location to reach S3 rather than a simple access key).
+The daily refresh does not run it, and it is not an exact twin: when the same
+date appears in several raw snapshots, the pandas job keeps the most recent
+snapshot's value, while the Spark job's `dropDuplicates` keeps an arbitrary
+one. Either way, the output lands at
+`s3://<bucket>/processed/economic_indicators/`.
 
 ### 4. Run dbt models
 
@@ -201,8 +205,10 @@ variables, so no manual profile setup is needed:
 ```bash
 cd dbt
 dbt run
-dbt test
 ```
+
+No dbt tests are defined yet, so `dbt test` has nothing to run. The only
+data-quality checks today are the null filters in the staging models.
 
 ### 5. Export the dashboard snapshot
 
@@ -220,17 +226,29 @@ These are the files a deployed dashboard actually reads.
 streamlit run dashboard/app.py
 ```
 
-Data loads in this order: a local dbt build, then the committed snapshot,
-then S3 (if `AWS_*` env vars are set), then synthetic demo data as a last
-resort so the UI is still browsable with zero setup.
+The national page loads data in this order: `dbt/target/economic_dashboard.parquet`
+if that file exists (no script in this repo writes it, so normally it does
+not), then the committed snapshot in `data/`, then S3 (if `AWS_*` env vars
+are set), then synthetic demo data as a last resort so the UI is still
+browsable with zero setup.
 
 ## Automated daily refresh
 
 `.github/workflows/refresh_data.yml` runs steps 1, 3, 4, and 5 above on a
-schedule (12:00 UTC daily, plus manual `workflow_dispatch`) and commits the
-result back to the repo, only if the data actually changed. This is what
-keeps the deployed dashboard current without it ever needing AWS credentials
-at deploy time; it just reads the committed snapshot.
+schedule (cron set to 12:00 UTC daily, plus manual `workflow_dispatch`;
+GitHub usually starts it later, anywhere from 12:00 to 22:00 UTC) and commits
+the result back to the repo. This is what keeps the deployed dashboard
+current without it ever needing AWS credentials at deploy time; it just reads
+the committed snapshot.
+
+The workflow has a "skip the commit if nothing changed" check, but in
+practice it commits every day: each mart carries a `dbt_updated_at`
+timestamp and `last_updated.json` records the run time, so the files differ
+on every run even when FRED published nothing new.
+
+Known gaps: the ingestion scripts log a failed series and carry on, so a
+failed fetch does not fail the workflow, and there is no alert when a run
+fails.
 
 **One-time setup:** add these as repository secrets (Settings → Secrets and
 variables → Actions). The workflow pushes with the default `GITHUB_TOKEN`,
@@ -250,7 +268,7 @@ just how many are active at once, 0-7:
 | Flag                        | Condition                                                     |
 |------------------------------|-----------------------------------------------------------------|
 | Unemployment rising          | 3-month avg > 3-month avg from 3 months prior                   |
-| GDP contracting              | GDP quarter-over-quarter change < 0                              |
+| GDP contracting              | GDP quarter-over-quarter change < 0 (see note below)             |
 | Inflation elevated           | CPI 12-month change > 3%                                        |
 | Fed rate elevated            | Effective funds rate > its own trailing 3-year average + 1pt    |
 | Housing starts declining     | 3-month avg < 3-month avg from 3 months prior                    |
@@ -258,6 +276,11 @@ just how many are active at once, 0-7:
 | Yield curve inverted         | 10Y minus 3M Treasury spread < -0.25pt                           |
 
 A score of 4 or more trips the **Recession Watch** flag.
+
+GDP is quarterly, and each quarter sits on one monthly row (January, April,
+July, October). The GDP flag can only be true on those rows; in the other
+two months of each quarter it reads as not contracting, so in most months
+the score is effectively out of six.
 
 ### Backtest
 
@@ -281,6 +304,18 @@ recessions. Against all 9 NBER-recognized recessions since 1959:
   1960 and 2020 entirely. Rejected for the same reason the persistence filter was rejected
   in the earlier version: it trades away real recessions for a cleaner-looking metric.
 
+How the numbers are defined: the window is January 1959 onward (812 months as of the
+September 2026 snapshot). A flagged month counts as "near a recession" if it falls between
+6 months before the NBER peak and the trough. A recession counts as caught if the score
+reaches 4+ anywhere in that same span. Lead time is measured inside that 6-month window, so
+"6 months" means the watch was already on when the window opened.
+
+Two limits on how far to trust this. The thresholds were tuned on the same 9 recessions they
+are scored against, so these are in-sample figures, not a forecast record. And the backtest
+uses today's revised data, not the first-print values that were available at the time (the
+data-revisions page shows how different those can be). The analysis was run ad hoc; the
+script is not in this repo.
+
 Even at ~56% precision, this is a broad stress gauge, not a precise predictor: a little under
 half of flagged months turn out not to be near an actual recession. Useful as one input among
 others, not a signal to act on alone.
@@ -290,9 +325,8 @@ others, not a signal to act on alone.
 | Layer         | Technology                                       |
 |---------------|---------------------------------------------------|
 | Ingestion     | Python, fredapi, boto3                            |
-| Orchestration | Apache Airflow 2.9 (TaskFlow API)                 |
+| Orchestration | GitHub Actions cron; Airflow 2.9 DAG for local runs |
 | Transform     | pandas (default) or PySpark 3.5 on Databricks     |
 | Modeling      | dbt-core + dbt-duckdb                             |
 | Storage       | AWS S3 (raw CSV + processed Parquet)              |
 | Dashboard     | Streamlit, Plotly                                 |
-| Automation    | GitHub Actions (daily refresh)                    |
