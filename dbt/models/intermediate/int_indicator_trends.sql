@@ -28,7 +28,15 @@ lagged as (
         lag(consumer_sentiment_3m_avg, 3) over (order by date) as consumer_sentiment_3m_avg_lag3,
         avg(fed_funds_rate) over (
             order by date rows between 35 preceding and current row
-        ) as fed_funds_rate_36m_avg
+        ) as fed_funds_rate_36m_avg,
+
+        -- GDP is quarterly: each print sits on the quarter's first month and
+        -- the next two monthly rows are null. Carry the latest print forward
+        -- until the next one so the flag describes the whole quarter instead
+        -- of reading "not contracting" two months out of three.
+        last_value(gdp_mom_pct ignore nulls) over (
+            order by date rows between unbounded preceding and current row
+        ) as gdp_qoq_pct_latest
 
     from staged
 
@@ -73,7 +81,7 @@ flagged as (
         end as flag_unemployment_rising,
 
         case
-            when gdp_mom_pct < 0 then true else false
+            when gdp_qoq_pct_latest < 0 then true else false
         end as flag_gdp_contracting,
 
         -- year-over-year CPI change annualised from 3m avg

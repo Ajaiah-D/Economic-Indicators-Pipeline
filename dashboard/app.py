@@ -495,7 +495,7 @@ def signal_banner(df: pd.DataFrame) -> None:
             f'<div style="color:{INK_MUTED}; font-size:0.8rem; margin-top:0.85rem; line-height:1.5;">'
             "The score counts how many of seven stress conditions are active at once, including an "
             "inverted yield curve. A reading of 4 or more trips the recession-watch threshold. "
-            "Backtested against every NBER recession since 1959: it catches all 9, with about 44% "
+            "Backtested against every NBER recession since 1959: it catches all 9, with about 43% "
             "of flagged months turning out to be false alarms (not a forecast).</div>",
             unsafe_allow_html=True,
         )
