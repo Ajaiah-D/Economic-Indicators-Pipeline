@@ -19,7 +19,7 @@ the result, refreshed daily by a scheduled GitHub Actions workflow.
 3. **Transform** (`spark/`) reads the raw CSVs and writes processed Parquet back to S3: national wide table with MoM % change, 3-month rolling averages, and the 10Y-3M Treasury spread; a long state table with per-state YoY changes computed at each indicator's native frequency; and a long vintage table keyed by (series, observation date, release date).
 4. **Modeling** (`dbt/`) builds staging views and materialized marts with dbt-duckdb: the national mart adds seven binary stress flags + a composite signal score, the state mart adds per-date ranks across the 51-state field, and the vintage mart adds first-print / latest-revision window columns.
 5. **Dashboard** (`dashboard/`) is a multi-page Streamlit + Plotly app -- see "Dashboard pages" below.
-6. **Refresh** (`.github/workflows/refresh_data.yml`) runs ingestion, transform, dbt and the snapshot export daily and commits small snapshots back to the repo, so the deployed dashboard always has current data without needing any credentials at deploy time.
+6. **Refresh** (`.github/workflows/refresh_data.yml`) runs ingestion, transform, dbt and the snapshot export daily and commits small snapshots back to the repo, so the deployed dashboard normally has current data without needing any credentials at deploy time.
 
 ## Dashboard pages
 
@@ -113,9 +113,12 @@ Economic-Indicators-Pipeline/
 │   ├── vintage_dashboard.parquet
 │   └── last_updated.json
 ├── .github/workflows/
-│   └── refresh_data.yml               daily ingest -> transform -> dbt -> snapshot
+│   ├── refresh_data.yml               daily ingest -> transform -> dbt -> snapshot
+│   └── tests.yml                      pytest on pushes to main and pull requests
 ├── .env.example
 ├── requirements.txt                   dashboard runtime only
+├── requirements-dev.txt               pytest and test-only imports
+├── requirements-refresh.txt           pinned install for the daily refresh
 └── requirements-pipeline.txt          full pipeline (Airflow, PySpark, dbt)
 ```
 
@@ -209,10 +212,11 @@ cd dbt
 dbt build
 ```
 
-`dbt build` runs the models and then the data tests: not-null and unique
-keys on each mart, one-row-per-key checks on the state and vintage grains,
-the signal score equalling the count of active flags, all 51 states present,
-and a freshness check that fails if the newest month is over 120 days old.
+`dbt build` runs the models and then the data tests: not-null keys on each
+mart, a unique date on the national mart, one-row-per-key checks on the state
+and vintage grains, the signal score equalling the count of active flags, the
+GDP flag held for all three months of a quarter, all 51 states present, and a
+freshness check that fails if the newest month is over 120 days old.
 The daily workflow runs the same command, so a failing test blocks the
 snapshot from being committed.
 
@@ -300,8 +304,8 @@ All indicators only overlap from 1959 onward, so that's the window this was
 actually checked against, not just anecdotally citing a couple of recent
 recessions. Against all 9 NBER-recognized recessions since 1959:
 
-- **Catches all 9** (score reached 4+ within 6 months of every recession's official start,
-  except two, see below).
+- **Catches all 9**: the score reached 4+ between 6 months before each NBER peak and its
+  trough. For 1960 and 2020 that only happened after the recession had begun (see below).
 - The original 6-flag version (no yield curve, threshold of 3) also caught all 9, but flagged
   3+ in about 34% of all months since 1959, and only 45% of those flagged months were actually
   near a real recession, roughly a coin flip.
@@ -312,9 +316,8 @@ recessions. Against all 9 NBER-recognized recessions since 1959:
   recession itself rather than ahead of it, both were unusually short recessions. Of the other
   7, six get 5-6 months of lead time; 1990 got only 1 month.
 - Also tested: requiring the yield curve to be inverted as a hard gate (score>=3 of the
-  other 6 AND yield inverted) pushes precision to ~66%, but drops recall to 7 of 9, missing
-  1960 and 2020 entirely. Rejected for the same reason the persistence filter was rejected
-  in the earlier version: it trades away real recessions for a cleaner-looking metric.
+  other 6 AND yield inverted). On the current data that keeps precision at about 54% while
+  recall falls to 5 of 9, missing 1960, 1990, 2007 and 2020, so it was rejected.
 
 How the numbers are defined: the window is January 1959 onward. A flagged month counts as
 "near a recession" if it falls between 6 months before the NBER peak and the trough. A
@@ -325,11 +328,16 @@ window opened.
 Two limits on how far to trust this. The thresholds were tuned on the same 9 recessions they
 are scored against, so these are in-sample figures, not a forecast record. And the backtest
 uses today's revised data, not the first-print values that were available at the time (the
-data-revisions page shows how different those can be).
+data-revisions page shows how different those can be). GDP is the one exception to "revised
+data": it is used only from the month it was first published, as described above, though the
+value used is today's revised one.
+
 Reproduce it with `python scripts/backtest_signal.py`, which reads the
 committed snapshot. `tests/test_backtest_signal.py` checks the 9-of-9 claim
 against that snapshot on code pushes to main and on pull requests, and the
 daily refresh runs the same check on the new snapshot before committing it.
+If that check fails, the refresh stops before committing, so the dashboard keeps the
+previous snapshot until someone looks at why.
 
 Even at ~57% precision, this is a broad stress gauge, not a precise predictor: a little under
 half of flagged months turn out not to be near an actual recession. Useful as one input among
