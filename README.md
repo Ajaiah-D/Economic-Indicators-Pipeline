@@ -247,10 +247,10 @@ the result back to the repo. This is what keeps the deployed dashboard
 current without it ever needing AWS credentials at deploy time; it just reads
 the committed snapshot.
 
-The workflow has a "skip the commit if nothing changed" check, but in
-practice it commits every day: each mart carries a `dbt_updated_at`
-timestamp and `last_updated.json` records the run time, so the files differ
-on every run even when FRED published nothing new.
+The workflow commits only when a snapshot's contents changed. The export
+leaves out dbt's build timestamp, and the run-time metadata file is only
+committed alongside a real data change, so on days FRED publishes nothing
+there is no commit and the dashboard's "last update" date stays put.
 
 If any series fails to fetch or upload, the ingestion script still attempts
 the rest, then exits non-zero. That fails the workflow before transform and
@@ -325,7 +325,8 @@ uses today's revised data, not the first-print values that were available at the
 data-revisions page shows how different those can be).
 Reproduce it with `python scripts/backtest_signal.py`, which reads the
 committed snapshot. `tests/test_backtest_signal.py` checks the 9-of-9 claim
-against that snapshot whenever code is pushed.
+against that snapshot on code pushes to main and on pull requests, and the
+daily refresh runs the same check on the new snapshot before committing it.
 
 Even at ~57% precision, this is a broad stress gauge, not a precise predictor: a little under
 half of flagged months turn out not to be near an actual recession. Useful as one input among

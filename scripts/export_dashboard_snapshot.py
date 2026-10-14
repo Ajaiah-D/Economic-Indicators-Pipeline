@@ -41,8 +41,12 @@ def run() -> None:
     for table, filename in MARTS.items():
         target = DATA_DIR / filename
         try:
+            # dbt_updated_at changes on every build; leaving it in would make
+            # the snapshot differ daily even when no data did, which defeats
+            # the workflow's "commit only if changed" check
             con.execute(
-                f"COPY main_marts.{table} TO '{target.as_posix()}' (FORMAT PARQUET)"
+                f"COPY (SELECT * EXCLUDE (dbt_updated_at) FROM main_marts.{table}) "
+                f"TO '{target.as_posix()}' (FORMAT PARQUET)"
             )
             row_count, min_date, max_date = con.execute(
                 f"SELECT count(*), min(date), max(date) FROM main_marts.{table}"
