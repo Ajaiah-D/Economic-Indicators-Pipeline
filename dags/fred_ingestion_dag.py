@@ -1,10 +1,10 @@
 """
 Daily ingestion DAG for FRED economic indicators.
 
-Seven indicator branches (fetch -> upload) all fan into a single log task.
-Not the production scheduler: the daily refresh runs from
-.github/workflows/refresh_data.yml. This DAG omits the two Treasury series
-(GS10, TB3MS) that ingestion/fetch_fred.py pulls.
+Nine indicator branches (fetch -> upload) all fan into a single log task.
+For running the national ingestion locally under Airflow. It is not the
+production scheduler: the daily refresh runs from
+.github/workflows/refresh_data.yml.
 FRED publishes most series monthly, but running daily means we pick up
 any intra-month revisions without manual reruns.
 
@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
 
+# Must match ingestion/fetch_fred.py; tests/test_series_lists_match.py enforces it.
 INDICATORS = {
     "CPIAUCSL": "cpi",
     "UNRATE": "unemployment_rate",
@@ -27,6 +28,8 @@ INDICATORS = {
     "FEDFUNDS": "fed_funds_rate",
     "HOUST": "housing_starts",
     "UMCSENT": "consumer_sentiment",
+    "GS10": "treasury_10y",
+    "TB3MS": "treasury_3m",
 }
 
 DEFAULT_ARGS = {
