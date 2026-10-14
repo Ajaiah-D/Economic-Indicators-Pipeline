@@ -293,10 +293,11 @@ GDP is quarterly. FRED dates each print on the quarter's first month, but it is
 published about a month after the quarter ends, so the signal only uses a print
 from the third month after its date (Q1's print counts from April). It then
 carries that print forward until the next one, so a contracting quarter keeps
-the flag on for three months. This applies in the backtest too: no month sees a
-GDP number that had not been published yet. The series is FRED's `GDP`, which is
-nominal (current dollars); nominal GDP fell in only 11 quarters since 1959, so
-this flag contributes less than a real-GDP flag would.
+the flag on for three months. This applies in the backtest too: normally no
+month sees a GDP number before it was published (a release delayed past the
+usual month, as in early 2019, would be seen a few weeks early). The series is
+FRED's `GDP`, which is nominal (current dollars); nominal GDP fell in only 11
+quarters since 1959, so this flag contributes less than a real-GDP flag would.
 
 ### Backtest
 
@@ -328,9 +329,9 @@ window opened.
 Two limits on how far to trust this. The thresholds were tuned on the same 9 recessions they
 are scored against, so these are in-sample figures, not a forecast record. And the backtest
 uses today's revised data, not the first-print values that were available at the time (the
-data-revisions page shows how different those can be). GDP is the one exception to "revised
-data": it is used only from the month it was first published, as described above, though the
-value used is today's revised one.
+data-revisions page shows how different those can be). For GDP the timing is also realistic
+(each print is used only from the month it was first published), but the value is still
+today's revised one.
 
 Reproduce it with `python scripts/backtest_signal.py`, which reads the
 committed snapshot. `tests/test_backtest_signal.py` checks the 9-of-9 claim
