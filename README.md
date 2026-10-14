@@ -274,7 +274,7 @@ just how many are active at once, 0-7:
 | Flag                        | Condition                                                     |
 |------------------------------|-----------------------------------------------------------------|
 | Unemployment rising          | 3-month avg > 3-month avg from 3 months prior                   |
-| GDP contracting              | GDP quarter-over-quarter change < 0 (see note below)             |
+| GDP contracting              | Latest published GDP quarter-over-quarter change < 0             |
 | Inflation elevated           | CPI 12-month change > 3%                                        |
 | Fed rate elevated            | Effective funds rate > its own trailing 3-year average + 1pt    |
 | Housing starts declining     | 3-month avg < 3-month avg from 3 months prior                    |
@@ -283,10 +283,11 @@ just how many are active at once, 0-7:
 
 A score of 4 or more trips the **Recession Watch** flag.
 
-GDP is quarterly, and each quarter sits on one monthly row (January, April,
-July, October). The GDP flag can only be true on those rows; in the other
-two months of each quarter it reads as not contracting, so in most months
-the score is effectively out of six.
+GDP is quarterly, and each print sits on the first month of its quarter. The
+flag carries the latest published quarter-over-quarter change forward until
+the next print, so a contracting quarter is flagged in all three of its
+months. The newest months therefore reflect the last quarter that has been
+published, which can be one quarter behind.
 
 ### Backtest
 
@@ -300,8 +301,8 @@ recessions. Against all 9 NBER-recognized recessions since 1959:
   3+ in about 34% of all months since 1959, and only 45% of those flagged months were actually
   near a real recession, roughly a coin flip.
 - Adding the yield curve, the single most established recession indicator in macro, as a 7th
-  flag and raising the bar to 4 of 7 cuts the flagged rate to about 18% of months and lifts
-  precision to about 56%, all without losing a single recession from the backtest.
+  flag and raising the bar to 4 of 7 cuts the flagged rate to about 19% of months and lifts
+  precision to about 57%, all without losing a single recession from the backtest.
 - Trade-off: 2 of the 9 recessions (1960 and 2020) only cross the 4-flag bar during the
   recession itself rather than ahead of it, both were unusually short recessions. Of the other
   7, six get 5-6 months of lead time; 1990 got only 1 month.
@@ -324,7 +325,7 @@ Reproduce it with `python scripts/backtest_signal.py`, which reads the
 committed snapshot. `tests/test_backtest_signal.py` checks the 9-of-9 claim
 against that snapshot whenever code is pushed.
 
-Even at ~56% precision, this is a broad stress gauge, not a precise predictor: a little under
+Even at ~57% precision, this is a broad stress gauge, not a precise predictor: a little under
 half of flagged months turn out not to be near an actual recession. Useful as one input among
 others, not a signal to act on alone.
 
