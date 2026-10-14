@@ -328,7 +328,7 @@ def inject_css() -> None:
 # --------------------------------------------------------------------------- #
 @st.cache_data(ttl=3600, show_spinner="Loading economic data...")
 def load_data() -> pd.DataFrame:
-    # a local dbt build takes priority (a dev who just ran `dbt run` sees
+    # a local dbt build takes priority (a dev who just ran `dbt build` sees
     # their own fresh output); the committed snapshot is what a deployed
     # app (e.g. Streamlit Community Cloud) actually has, refreshed daily by
     # .github/workflows/refresh_data.yml
@@ -430,7 +430,7 @@ def header(df: pd.DataFrame, meta: dict) -> None:
 
     meta_bits = f"Data through {through_str}"
     if updated_str:
-        meta_bits += f" &nbsp;·&nbsp; Auto-refreshed daily &nbsp;·&nbsp; Last update {updated_str}"
+        meta_bits += f" &nbsp;·&nbsp; Auto-refreshed daily &nbsp;·&nbsp; Data last changed {updated_str}"
 
     st.markdown(
         f"""
