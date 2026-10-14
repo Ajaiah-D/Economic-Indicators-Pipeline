@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import boto3
 import pandas as pd
@@ -78,7 +78,7 @@ def upload_to_s3(df: pd.DataFrame, series_id: str, label: str, run_date: date) -
 
 def fetch_and_upload(series_id: str, label: str, run_date: date | None = None) -> dict:
     if run_date is None:
-        run_date = datetime.utcnow().date()
+        run_date = datetime.now(timezone.utc).date()
     df = fetch_series(series_id, label)
     key = upload_to_s3(df, series_id, label, run_date)
     return {
