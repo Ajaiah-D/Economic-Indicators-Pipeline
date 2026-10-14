@@ -306,19 +306,19 @@ recessions. Against all 9 NBER-recognized recessions since 1959:
   1960 and 2020 entirely. Rejected for the same reason the persistence filter was rejected
   in the earlier version: it trades away real recessions for a cleaner-looking metric.
 
-How the numbers are defined: the window is January 1959 onward (812 months as of the
-September 2026 snapshot). A flagged month counts as "near a recession" if it falls between
-6 months before the NBER peak and the trough. A recession counts as caught if the score
-reaches 4+ anywhere in that same span. Lead time is measured inside that 6-month window, so
-"6 months" means the watch was already on when the window opened.
+How the numbers are defined: the window is January 1959 onward. A flagged month counts as
+"near a recession" if it falls between 6 months before the NBER peak and the trough. A
+recession counts as caught if the score reaches 4+ anywhere in that same span. Lead time is
+measured inside that 6-month window, so "6 months" means the watch was already on when the
+window opened.
 
 Two limits on how far to trust this. The thresholds were tuned on the same 9 recessions they
 are scored against, so these are in-sample figures, not a forecast record. And the backtest
 uses today's revised data, not the first-print values that were available at the time (the
 data-revisions page shows how different those can be).
 Reproduce it with `python scripts/backtest_signal.py`, which reads the
-committed snapshot; `tests/test_backtest_signal.py` fails the build if a data
-revision ever drops recall below 9 of 9.
+committed snapshot. `tests/test_backtest_signal.py` checks the 9-of-9 claim
+against that snapshot whenever code is pushed.
 
 Even at ~56% precision, this is a broad stress gauge, not a precise predictor: a little under
 half of flagged months turn out not to be near an actual recession. Useful as one input among
