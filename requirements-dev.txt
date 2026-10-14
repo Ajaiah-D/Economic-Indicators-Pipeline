@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8,<9
+duckdb>=1.0,<2
+fredapi==0.5.1
