@@ -236,6 +236,26 @@ def inject_css() -> None:
             background: {SURFACE};
             border-radius: 14px;
             padding: 0.85rem 1rem;
+            flex: 1 1 auto;
+        }}
+        /* Equal-height cards within a row. Streamlit sizes each column to its
+           own content, so a card without a delta line, or with a caption that
+           wraps once more, came out shorter than its neighbours. Let the column,
+           its inner block and the card's wrapper fill the row height, then pin
+           each card's last element (sparkline or footnote) to the bottom so
+           those line up too. */
+        div[data-testid="stColumn"]:has(div[class*="st-key-statcard"]) {{
+            display: flex;
+            flex-direction: column;
+        }}
+        div[data-testid="stColumn"]:has(div[class*="st-key-statcard"]) > div[data-testid="stVerticalBlock"],
+        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-statcard"]) {{
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+        }}
+        div[class*="st-key-statcard"] > div:last-child {{
+            margin-top: auto;
         }}
         div[data-testid="stMetric"] {{
             background: transparent;
@@ -538,21 +558,24 @@ def _kpi_tile(df: pd.DataFrame, key: str) -> None:
     # renders directly into the caller's current container context.
     meta = INDICATOR_META[key]
     available = df.dropna(subset=[key])
+    delta = None
     if not available.empty:
         r = available.iloc[-1]
-        mom = r.get(f"{key}_mom_pct")
         as_of = r["date"].strftime("%b %Y")
         value_str = meta["fmt"].format(r[key])
+        mom = r.get(f"{key}_mom_pct")
+        if pd.notna(mom):
+            delta = f"{mom:+.2f}% MoM"
+        elif f"{key}_mom_pct" not in df.columns and len(available) > 1:
+            # the yield spread is already a gap between two rates, so a percent
+            # change of it is meaningless; show the change in points instead
+            # (this also keeps its card the same height as the others)
+            delta = f"{r[key] - available[key].iloc[-2]:+.2f}pt MoM"
     else:
-        mom = None
         as_of = ""
         value_str = "N/A"
 
-    st.metric(
-        label=meta["label"],
-        value=value_str,
-        delta=f"{mom:+.2f}% MoM" if pd.notna(mom) else None,
-    )
+    st.metric(label=meta["label"], value=value_str, delta=delta)
     st.markdown(f'<div class="tile-asof">as of {as_of}</div>', unsafe_allow_html=True)
     st.plotly_chart(
         sparkline(df, key, meta["color"]),
