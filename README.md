@@ -51,17 +51,18 @@ The dashboard uses a plain official-statistics style, in the spirit of
 GOV.UK and Rijksoverheid: Arial, square corners, and rules and grey panels
 instead of shadows. It has a light and a dark mode. It follows your system
 setting, and you can switch with the ⋮ menu (top right): System, Light or
-Dark. Arrows on the stat tiles always point the way the number moved, and
-their colour says whether that move is good for the economy (green), bad
-(red) or neither (grey). The value is always shown as text too.
+Dark. Where a tile shows a change, its arrow points the way the number
+moved, and its colour says whether that move is good for the economy
+(green), bad (red) or neither (grey). The value is always shown as text too.
 
 | Light | Dark |
 |---|---|
 | ![National overview in light mode](docs/screenshots/national-light.png) | ![National overview in dark mode](docs/screenshots/national-dark.png) |
 
 After a switch from the menu, the page's own panels change straight away.
-The Plotly charts pick up the new colours on your next click, because
-Streamlit only tells the app the mode when it reruns.
+The Plotly charts pick up the new colours the next time you change a filter
+or control (anything that reruns the app), because Streamlit only tells the
+app the mode when it reruns; the same goes for the state map.
 
 ## FRED Indicators
 
@@ -264,9 +265,9 @@ are set), then synthetic demo data as a last resort so the UI is still
 browsable with zero setup.
 
 To check the look in both modes, `scripts/screenshot_dashboard.py` starts
-the app and saves light, dark and phone-width screenshots of every page. It
-needs a Python with Playwright and Chromium (`pip install playwright` and
-`playwright install chromium`):
+the app and saves light and dark screenshots of every page, plus one
+phone-width shot of the national page. It needs a Python with Playwright
+and Chromium (`pip install playwright` and `playwright install chromium`):
 
 ```bash
 python scripts/screenshot_dashboard.py   # saves to <temp>/eip-screenshots; --out DIR to change

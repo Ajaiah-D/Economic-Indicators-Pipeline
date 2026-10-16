@@ -22,7 +22,7 @@ dbt-duckdb>=1.8          # local testing against DuckDB
 # dbt-spark>=1.8         # uncomment for Databricks
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
-streamlit>=1.35,<2
+streamlit>=1.53,<2
 plotly>=5.22,<7
 pandas>=2.2,<4
 pyarrow>=16,<25          # Parquet support for pandas

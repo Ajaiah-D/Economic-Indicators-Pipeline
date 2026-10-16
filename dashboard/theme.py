@@ -72,7 +72,9 @@ def tokens(theme_mode: str | None = None) -> dict[str, str]:
 # whether that move is good for the economy. The text value is always shown
 # next to it, so colour is never the only cue. Keys are the series in
 # app.INDICATOR_META (a test keeps them identical); the directions agree with
-# briefing.py's warn/good tones.
+# briefing.py's warn/good tones, with one exception: cpi is "none" by design
+# (its index rises almost every month, so "down = good" would paint it red
+# nearly always), while the briefing still calls a CPI rise a warning.
 # --------------------------------------------------------------------------- #
 GOOD_DIRECTION: dict[str, str] = {
     "cpi": "none",
