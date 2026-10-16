@@ -6,6 +6,8 @@ directly through AppTest.from_function; one more test runs the real entry
 point, which renders the default (national) page through st.navigation.
 """
 
+import ast
+import re
 import socket
 from pathlib import Path
 
@@ -94,3 +96,26 @@ def test_national_page_has_one_tile_per_indicator_and_the_banner():
     assert 'class="civic-banner"' in html
     assert 'class="civic-brief"' in html
     assert "about 43% of flagged months turning out to be false alarms" in html
+
+
+def _page_config_kwargs() -> dict:
+    tree = ast.parse(APP.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "set_page_config":
+            return {kw.arg: ast.literal_eval(kw.value) for kw in node.keywords}
+    raise AssertionError("no st.set_page_config call in app.py")
+
+
+def test_sidebar_width_is_set_natively():
+    # replaces the old 350px CSS rule; int widths need Streamlit >= 1.53
+    assert _page_config_kwargs()["initial_sidebar_state"] == 350
+
+
+def test_streamlit_floor_supports_the_sidebar_width():
+    requirements = (APP.parent.parent / "requirements.txt").read_text(encoding="utf-8")
+    assert re.search(r"^streamlit>=1\.53,<2$", requirements, re.MULTILINE)
+
+
+def test_pages_render_inside_the_civic_container():
+    source = APP.read_text(encoding="utf-8")
+    assert source.count("st.container(key=ui.PAGE_CONTAINER_KEY)") == 3

@@ -23,7 +23,9 @@ st.set_page_config(
     page_title="U.S. Economic Indicators",
     page_icon=None,
     layout="wide",
-    initial_sidebar_state="expanded",
+    # 350px fits the date-range presets (they wrap natively); an int width
+    # keeps "auto" behaviour, so phones start with the sidebar closed
+    initial_sidebar_state=350,
 )
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -486,7 +488,7 @@ def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     return df[mask].copy(), selected
 
 
-def national_page() -> None:
+def _national_content() -> None:
     df = load_data()
     meta = load_metadata()
 
@@ -528,14 +530,21 @@ def national_page() -> None:
     footer()
 
 
+def national_page() -> None:
+    with st.container(key=ui.PAGE_CONTAINER_KEY):
+        _national_content()
+
+
 def states_page() -> None:
-    states_view.render(load_data(), source_line("FRED, St. Louis Fed", load_metadata()))
-    footer()
+    with st.container(key=ui.PAGE_CONTAINER_KEY):
+        states_view.render(load_data(), source_line("FRED, St. Louis Fed", load_metadata()))
+        footer()
 
 
 def revisions_page() -> None:
-    revisions_view.render(source_line("ALFRED, St. Louis Fed", load_metadata()))
-    footer()
+    with st.container(key=ui.PAGE_CONTAINER_KEY):
+        revisions_view.render(source_line("ALFRED, St. Louis Fed", load_metadata()))
+        footer()
 
 
 def main() -> None:
