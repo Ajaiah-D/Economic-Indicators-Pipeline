@@ -1,22 +1,46 @@
-# Surface colours here MUST mirror the tokens in dashboard/theme.py. Streamlit
-# paints its own chrome (widgets, dataframes, the settings menu) from this file,
-# while our injected CSS paints everything else from theme.py -- if the two
-# drift you get several slightly different whites on one screen, which reads as
-# a rendering bug rather than as hierarchy.
+# Native theme for both modes. Every colour here MUST equal the token of the
+# same role in dashboard/theme.py (LIGHT / DARK); tests/test_theme.py fails if
+# they drift. Streamlit paints its own widgets from this file, while
+# dashboard/ui.py paints the app's own HTML from theme.py.
+#
+# Defining [theme.light] and [theme.dark] gives visitors a System / Light /
+# Dark choice in the top-right menu; the default follows the OS setting.
+# `base` is deliberately not set: each mode forces its own base anyway.
 
 [theme]
-base = "light"
-primaryColor = "#2a78d6"              # unchanged: series/accent blue
-backgroundColor = "#eeece6"           # theme.PAGE
-secondaryBackgroundColor = "#f8f7f3"  # theme.SURFACE -- widget fills match card fills
-textColor = "#0b0b0b"                 # theme.INK_PRIMARY
-borderColor = "#d9d7cf"               # theme.GRIDLINE -- st.container(border=True) picks this up
-font = "sans serif"
+font = "Arial, Helvetica, sans-serif"
+headingFont = "Arial, Helvetica, sans-serif"
+baseRadius = "0px"
+buttonRadius = "0px"
+showSidebarBorder = true
 
-[theme.sidebar]
-backgroundColor = "#e9e7e0"           # theme.SIDEBAR -- one step below PAGE
-secondaryBackgroundColor = "#f8f7f3"  # widgets stay on the light card surface
-borderColor = "#d9d7cf"
+[theme.light]
+primaryColor = "#2b5f8a"              # ACCENT
+backgroundColor = "#ffffff"           # PAGE
+secondaryBackgroundColor = "#f3f3f3"  # SURFACE
+textColor = "#0b0c0c"                 # INK
+linkColor = "#2b5f8a"                 # ACCENT
+borderColor = "#cdd3d9"               # BORDER
+
+[theme.light.sidebar]
+backgroundColor = "#f3f3f3"           # SURFACE
+secondaryBackgroundColor = "#ffffff"  # PAGE -- widgets sit on white in the grey sidebar
+textColor = "#0b0c0c"                 # INK
+borderColor = "#cdd3d9"               # BORDER
+
+[theme.dark]
+primaryColor = "#9fc1e0"              # ACCENT
+backgroundColor = "#151b22"           # PAGE
+secondaryBackgroundColor = "#1e2630"  # SURFACE
+textColor = "#eef1f4"                 # INK
+linkColor = "#9fc1e0"                 # ACCENT
+borderColor = "#3a4652"               # BORDER
+
+[theme.dark.sidebar]
+backgroundColor = "#1e2630"           # SURFACE
+secondaryBackgroundColor = "#151b22"  # PAGE
+textColor = "#eef1f4"                 # INK
+borderColor = "#3a4652"               # BORDER
 
 [browser]
 gatherUsageStats = false
