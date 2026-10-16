@@ -5,9 +5,10 @@
 # upper bounds cap at the next untested major version -- pandas 3.0 already
 # broke this project once (a read_json signature change), so floor-only
 # pins are a real risk on a repo that won't be watched closely
-# >=1.51 for the [theme.sidebar] table used in .streamlit/config.toml
-# ([theme.sidebar] landed in 1.47, [theme.light]/[theme.dark] in 1.51).
-streamlit>=1.51,<2
+# >=1.53: st.set_page_config(initial_sidebar_state=<int>) sets the sidebar
+# width (new in 1.53); the [theme.light]/[theme.dark] tables and their
+# .sidebar subsections in .streamlit/config.toml need 1.51.
+streamlit>=1.53,<2
 plotly>=5.22,<7
 pandas>=2.2,<4
 pyarrow>=16,<25
