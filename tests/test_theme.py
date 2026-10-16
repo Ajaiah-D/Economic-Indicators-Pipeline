@@ -261,3 +261,11 @@ def test_plotly_layout_hovermode_can_be_overridden():
 
 def test_plotly_config_hides_the_modebar():
     assert theme.PLOTLY_CONFIG == {"displayModeBar": False}
+
+
+def test_missing_values_include_pandas_na():
+    import pandas as pd
+
+    assert theme.change_tone("up", pd.NA) == "neutral"
+    assert theme.change_tone("down", pd.NA) == "neutral"
+    assert theme.arrow(pd.NA) == "▬"

@@ -12,21 +12,10 @@ from plotly.subplots import make_subplots
 
 import revisions_view
 import states_view
+import theme
+import ui
 from briefing import build_briefing
-from theme import (
-    FONT,
-    GRIDLINE,
-    INK_MUTED,
-    INK_PRIMARY,
-    INK_SECONDARY,
-    PAGE,
-    SIDEBAR,
-    STATUS,
-    SURFACE,
-    base_layout,
-    rgba as _rgba,
-    sparkline,
-)
+from theme import FONT, PLOTLY_CONFIG, plotly_layout, rgba
 
 load_dotenv()
 
@@ -43,26 +32,17 @@ LOCAL_SNAPSHOT_PARQUET = REPO_ROOT / "data" / "economic_dashboard.parquet"
 LAST_UPDATED_JSON = REPO_ROOT / "data" / "last_updated.json"
 S3_PARQUET_KEY = "processed/economic_indicators"
 
-# Series colours. Every value clears 3:1 against theme.PAGE (WCAG 1.4.11,
-# graphical objects) -- U-3, GDP and the yield spread used to sit at 2.4/2.6/2.3
-# and were darkened along their own hue. U-6 was pushed well past its 3:1
-# requirement on purpose: it sits in the same green family as U-3 (it's a
-# superset of it) and the two are plotted together, so it needs the lightness
-# gap to stay tellable apart.
-#
-# KNOWN LIMITATION: this palette is safe for protanopia and deuteranopia but
-# NOT for tritanopia, where U-3 and Housing converge (OKLab dE 0.035). Three of
-# the eight series are greens (U-3, U-6, Fed Funds), which is the root cause;
-# fixing it properly means moving one of them off green entirely.
+# Series colours come from theme.SERIES by "slot" (one validated palette per
+# mode; see theme.py). Slots follow this dict's order.
 INDICATOR_META = {
-    "cpi":                {"label": "CPI",                "short": "CPI",        "unit": "Index (1982-84=100)", "fmt": "{:,.1f}", "color": "#2a78d6"},
-    "unemployment_rate":  {"label": "Unemployment Rate (U-3)", "short": "Unemp. (U-3)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#169668"},
-    "u6_rate":            {"label": "Unemployment Rate (U-6)", "short": "Unemp. (U-6)", "unit": "%",              "fmt": "{:,.1f}%", "color": "#064f30"},
-    "gdp":                {"label": "GDP",                "short": "GDP",        "unit": "Billions USD",        "fmt": "${:,.0f}B", "color": "#b57700"},
-    "fed_funds_rate":     {"label": "Fed Funds Rate",     "short": "Fed Funds",  "unit": "%",                   "fmt": "{:,.2f}%", "color": "#008300"},
-    "housing_starts":     {"label": "Housing Starts",     "short": "Housing",    "unit": "Thousands of units",  "fmt": "{:,.0f}K", "color": "#4a3aa7"},
-    "consumer_sentiment": {"label": "Consumer Sentiment", "short": "Sentiment",  "unit": "Index",               "fmt": "{:,.1f}", "color": "#e34948"},
-    "yield_spread":       {"label": "10Y-3M Treasury Spread", "short": "Yield Spread", "unit": "points",       "fmt": "{:+.2f}pt", "color": "#c3678a"},
+    "cpi":                {"label": "CPI",                "short": "CPI",        "unit": "Index (1982-84=100)", "fmt": "{:,.1f}", "slot": 0},
+    "unemployment_rate":  {"label": "Unemployment Rate (U-3)", "short": "Unemp. (U-3)", "unit": "%",              "fmt": "{:,.1f}%", "slot": 1},
+    "u6_rate":            {"label": "Unemployment Rate (U-6)", "short": "Unemp. (U-6)", "unit": "%",              "fmt": "{:,.1f}%", "slot": 2},
+    "gdp":                {"label": "GDP",                "short": "GDP",        "unit": "Billions USD",        "fmt": "${:,.0f}B", "slot": 3},
+    "fed_funds_rate":     {"label": "Fed Funds Rate",     "short": "Fed Funds",  "unit": "%",                   "fmt": "{:,.2f}%", "slot": 4},
+    "housing_starts":     {"label": "Housing Starts",     "short": "Housing",    "unit": "Thousands of units",  "fmt": "{:,.0f}K", "slot": 5},
+    "consumer_sentiment": {"label": "Consumer Sentiment", "short": "Sentiment",  "unit": "Index",               "fmt": "{:,.1f}", "slot": 6},
+    "yield_spread":       {"label": "10Y-3M Treasury Spread", "short": "Yield Spread", "unit": "points",       "fmt": "{:+.2f}pt", "slot": 7},
 }
 
 FLAG_DESCRIPTIONS = {
@@ -116,231 +96,6 @@ GLOSSARY = {
     },
 }
 
-
-# --------------------------------------------------------------------------- #
-# Styling
-# --------------------------------------------------------------------------- #
-def inject_css() -> None:
-    st.markdown(
-        f"""
-        <style>
-        .stApp {{ background: {PAGE}; }}
-        html, body, [class*="css"] {{ font-family: {FONT}; }}
-        /* 1240px left ~660px of dead gutter each side on a 2560px display,
-           which reads as emptiness rather than as breathing room. A dashboard
-           is scanned and compared, not read like prose, so it wants a denser
-           measure than an article would. */
-        .block-container {{
-            padding-top: 1.8rem;
-            padding-bottom: 2rem;
-            max-width: 1440px;
-        }}
-        footer {{ visibility: hidden; }}
-        header[data-testid="stHeader"] {{ background: transparent; }}
-        h1, h2, h3 {{ font-family: {FONT}; letter-spacing: -0.02em; }}
-
-        /* wide enough for the date-range preset row; buttons wrap, never clip */
-        section[data-testid="stSidebar"] {{
-            width: 350px !important;
-            min-width: 350px !important;
-            background: {SIDEBAR};
-            border-right: 1px solid {GRIDLINE};
-        }}
-        /* nav page links */
-        section[data-testid="stSidebar"] a[data-testid="stSidebarNavLink"] {{
-            border-radius: 9px;
-            padding: 0.3rem 0.75rem;
-            margin-bottom: 0.1rem;
-        }}
-        section[data-testid="stSidebar"] a[data-testid="stSidebarNavLink"] span {{
-            font-size: 0.92rem;
-            font-weight: 600;
-        }}
-        /* sidebar widget labels read as quiet section headings */
-        section[data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {{
-            font-size: 0.74rem;
-            font-weight: 650;
-            letter-spacing: 0.07em;
-            text-transform: uppercase;
-            color: {INK_MUTED};
-        }}
-        /* compact, consistent pill/segment buttons app-wide */
-        div[data-testid="stButtonGroup"] {{
-            flex-wrap: wrap;
-            gap: 5px;
-        }}
-        div[data-testid="stButtonGroup"] button {{
-            padding: 0.14rem 0.6rem;
-            min-height: 1.65rem;
-            font-size: 0.82rem;
-        }}
-        div[data-testid="stButtonGroup"] button p {{
-            font-size: 0.82rem;
-        }}
-        /* on narrow phones the 350px sidebar overlay can exceed the viewport
-           itself; cap it to a share of screen width so it never runs off-screen */
-        @media (max-width: 640px) {{
-            section[data-testid="stSidebar"] {{
-                width: min(350px, 88vw) !important;
-                min-width: 240px !important;
-            }}
-        }}
-
-        .hero-title {{
-            font-size: 2.15rem;
-            font-weight: 680;
-            color: {INK_PRIMARY};
-            margin-bottom: 0.2rem;
-            line-height: 1.1;
-        }}
-        .hero-sub {{
-            color: {INK_SECONDARY};
-            font-size: 0.98rem;
-            margin-bottom: 0.55rem;
-        }}
-        .hero-meta {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            color: {INK_MUTED};
-            font-size: 0.82rem;
-        }}
-        .live-dot {{
-            width: 7px; height: 7px; border-radius: 50%;
-            background: {STATUS['good']}; display: inline-block;
-            box-shadow: 0 0 0 3px {STATUS['good']}22;
-        }}
-
-        /* Streamlit's default block gap and divider margins are tuned for
-           prose-length pages. A dashboard is scanned, so the same spacing
-           reads as dead air -- pull both in a notch. */
-        div[data-testid="stVerticalBlock"] {{ gap: 0.85rem; }}
-        hr {{ margin: 1.1rem 0 !important; }}
-
-        .section-label {{
-            font-size: 0.76rem;
-            font-weight: 650;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: {INK_MUTED};
-            margin: 0.2rem 0 0.7rem 0;
-        }}
-
-        /* Bordered stat-tile containers.
-           NOTE: these are matched via the `st-key-statcard-*` class that
-           Streamlit emits for `st.container(key=...)`, NOT via a data-testid.
-           The old `stVerticalBlockBorderWrapper` testid this used to target no
-           longer exists, so that rule had silently stopped applying and the
-           tiles were rendering unfilled. Keys are the documented, stable hook. */
-        div[class*="st-key-statcard"] {{
-            background: {SURFACE};
-            border-radius: 14px;
-            padding: 0.85rem 1rem;
-            flex: 1 1 auto;
-        }}
-        /* Equal-height cards within a row. Streamlit sizes each column to its
-           own content, so a card without a delta line, or with a caption that
-           wraps once more, came out shorter than its neighbours. Let the column,
-           its inner block and the card's wrapper fill the row height, then pin
-           each card's last element (sparkline or footnote) to the bottom so
-           those line up too. */
-        div[data-testid="stColumn"]:has(div[class*="st-key-statcard"]) {{
-            display: flex;
-            flex-direction: column;
-        }}
-        div[data-testid="stColumn"]:has(div[class*="st-key-statcard"]) > div[data-testid="stVerticalBlock"],
-        div[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-statcard"]) {{
-            flex: 1 1 auto;
-            display: flex;
-            flex-direction: column;
-        }}
-        div[class*="st-key-statcard"] > div:last-child {{
-            margin-top: auto;
-        }}
-        div[data-testid="stMetric"] {{
-            background: transparent;
-            border: none;
-            padding: 0.1rem 0.2rem 0 0.2rem;
-        }}
-        div[data-testid="stMetricLabel"] p {{
-            font-size: 0.86rem;
-            font-weight: 600;
-            color: {INK_SECONDARY};
-        }}
-        div[data-testid="stMetricValue"] {{
-            font-size: 1.9rem;
-            font-weight: 640;
-            color: {INK_PRIMARY};
-        }}
-        .tile-asof {{
-            font-size: 0.72rem;
-            color: {INK_MUTED};
-            margin: 0.1rem 0 0.2rem 0.2rem;
-        }}
-
-        /* signal banner */
-        .banner {{
-            border-radius: 16px;
-            padding: 1.25rem 1.4rem;
-            border: 1px solid rgba(11,11,11,0.06);
-            box-shadow: 0 1px 2px rgba(11,11,11,0.04);
-        }}
-        .banner-score {{ font-size: 3.4rem; font-weight: 680; line-height: 1; }}
-        .banner-score small {{ font-size: 1.3rem; color: {INK_MUTED}; font-weight: 500; }}
-        .status-pill {{
-            display: inline-flex; align-items: center; gap: 0.45rem;
-            padding: 0.3rem 0.85rem; border-radius: 999px;
-            font-size: 0.86rem; font-weight: 650;
-        }}
-        .status-dot {{ width: 9px; height: 9px; border-radius: 50%; display: inline-block; }}
-        .flag-chip {{
-            display: inline-flex; align-items: center; gap: 0.5rem;
-            padding: 0.4rem 0.7rem; margin: 0 0.4rem 0.4rem 0;
-            background: {SURFACE}; border: 1px solid rgba(208,59,59,0.25);
-            border-radius: 8px; font-size: 0.88rem; color: {INK_PRIMARY};
-        }}
-        .flag-chip-dot {{ width: 7px; height: 7px; border-radius: 50%; background: {STATUS['critical']}; }}
-        .all-clear {{
-            display: inline-flex; align-items: center; gap: 0.5rem;
-            padding: 0.4rem 0.75rem; background: {SURFACE};
-            border: 1px solid rgba(12,163,12,0.28); border-radius: 8px;
-            font-size: 0.9rem; color: {INK_PRIMARY};
-        }}
-
-        /* monthly briefing */
-        .brief-card {{
-            background: {SURFACE};
-            border: 1px solid {GRIDLINE};
-            border-radius: 16px;
-            padding: 1.1rem 1.3rem 1.2rem 1.3rem;
-            box-shadow: 0 1px 2px rgba(11,11,11,0.04);
-        }}
-        .brief-head {{ display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.65rem; flex-wrap: wrap; }}
-        .brief-title {{ font-weight: 680; font-size: 1.02rem; color: {INK_PRIMARY}; }}
-        .brief-vs {{ color: {INK_MUTED}; font-size: 0.78rem; }}
-        .brief-item {{
-            display: flex; gap: 0.6rem; align-items: flex-start;
-            margin: 0.42rem 0; color: {INK_SECONDARY};
-            font-size: 0.92rem; line-height: 1.55;
-        }}
-        .brief-item strong {{ color: {INK_PRIMARY}; font-weight: 650; }}
-        .brief-dot {{ width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 0.48rem; }}
-        .brief-quiet {{ color: {INK_MUTED}; font-size: 0.84rem; margin-top: 0.55rem; }}
-
-        .footer {{
-            margin-top: 2rem; padding-top: 1rem;
-            border-top: 1px solid {GRIDLINE};
-            color: {INK_MUTED}; font-size: 0.8rem;
-            display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
-        }}
-        .footer a {{ color: {INK_SECONDARY}; text-decoration: none; }}
-        div[data-testid="stExpander"] details {{
-            border: 1px solid {GRIDLINE}; border-radius: 12px; background: {SURFACE};
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 # --------------------------------------------------------------------------- #
@@ -435,90 +190,66 @@ def latest_complete_row(df: pd.DataFrame) -> pd.Series:
 # --------------------------------------------------------------------------- #
 # Sections
 # --------------------------------------------------------------------------- #
+SIGNAL_NOTE = (
+    "The score counts how many of seven stress conditions are active at once, including an "
+    "inverted yield curve. A reading of 4 or more trips the recession-watch threshold. "
+    "Backtested against every NBER recession since 1959: it catches all 9, with about 43% "
+    "of flagged months turning out to be false alarms (not a forecast)."
+)
+FOOTER_SOURCE = "Source: Federal Reserve Economic Data (FRED), St. Louis Fed"
+FOOTER_PIPELINE = "Pipeline: Python → Airflow → dbt → Streamlit · refreshed daily via GitHub Actions"
+
+
+def apply_theme() -> None:
+    # style-only st.html goes to Streamlit's event container, so it takes no
+    # room on the page; the CSS carries both modes (see ui.build_css)
+    st.html(ui.build_css(theme.mode()))
+
+
+def updated_label(meta: dict) -> str:
+    ts = meta.get("last_updated_utc")
+    if not ts:
+        return ""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%b %d, %Y")
+    except ValueError:
+        return ""
+
+
 def header(df: pd.DataFrame, meta: dict) -> None:
     data_through = df["date"].max()
     through_str = data_through.strftime("%b %Y") if pd.notna(data_through) else "n/a"
-
-    updated_str = ""
-    ts = meta.get("last_updated_utc")
-    if ts:
-        try:
-            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            updated_str = dt.strftime("%b %d, %Y")
-        except ValueError:
-            updated_str = ""
-
-    meta_bits = f"Data through {through_str}"
-    if updated_str:
-        meta_bits += f" &nbsp;·&nbsp; Auto-refreshed daily &nbsp;·&nbsp; Data last changed {updated_str}"
-
+    bits = [f"Data through {through_str}"]
+    updated = updated_label(meta)
+    if updated:
+        bits += ["Auto-refreshed daily", f"Data last changed {updated}"]
     st.markdown(
-        f"""
-        <div class="hero-title">U.S. Economic Indicators</div>
-        <div class="hero-sub">Federal Reserve (FRED) macro indicators and Treasury yields, with a composite recession-risk signal.</div>
-        <div class="hero-meta"><span class="live-dot"></span>{meta_bits}</div>
-        """,
+        ui.page_header(
+            "National overview",
+            "Federal Reserve (FRED) macro indicators and Treasury yields, with a composite recession-risk signal.",
+            " · ".join(bits),
+        ),
         unsafe_allow_html=True,
     )
-    st.write("")
 
 
 def status_for_score(score: int, recession_watch: bool) -> tuple[str, str]:
+    """(status key for ui.signal_banner, tag text)."""
     if recession_watch:
-        return STATUS["critical"], "Recession watch"
+        return "watch", "Recession watch"
     if score >= 3:
-        return STATUS["warning"], "Elevated risk"
-    return STATUS["good"], "Stable"
+        return "elevated", "Elevated risk"
+    return "clear", "No recession watch"
 
 
 def signal_banner(df: pd.DataFrame) -> None:
     row = latest_complete_row(df)
     score = int(row.get("signal_score", 0))
     recession_watch = bool(row.get("recession_watch", False))
-    colour, label = status_for_score(score, recession_watch)
+    status, label = status_for_score(score, recession_watch)
     as_of = row["date"].strftime("%b %Y") if pd.notna(row["date"]) else ""
     active = [FLAG_DESCRIPTIONS[f] for f in FLAG_DESCRIPTIONS if bool(row.get(f, False))]
-
-    left, right = st.columns([1, 2.3], gap="medium")
-
-    with left:
-        st.markdown(
-            f"""
-            <div class="banner" style="background:{_rgba(colour, 0.06)}; border-color:{_rgba(colour, 0.25)};">
-                <div style="color:{INK_MUTED}; font-size:0.76rem; font-weight:650; letter-spacing:0.08em; text-transform:uppercase;">Recession-risk signal</div>
-                <div class="banner-score" style="color:{INK_PRIMARY}; margin-top:0.35rem;">{score}<small>/7</small></div>
-                <div style="margin-top:0.6rem;">
-                    <span class="status-pill" style="background:{_rgba(colour, 0.14)}; color:{colour};">
-                        <span class="status-dot" style="background:{colour};"></span>{label}
-                    </span>
-                </div>
-                <div style="color:{INK_MUTED}; font-size:0.76rem; margin-top:0.7rem;">as of {as_of}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with right:
-        st.markdown('<div class="section-label" style="margin-top:0.2rem;">Active stress signals</div>', unsafe_allow_html=True)
-        if active:
-            chips = "".join(
-                f'<span class="flag-chip"><span class="flag-chip-dot"></span>{f}</span>' for f in active
-            )
-            st.markdown(f"<div>{chips}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(
-                f'<span class="all-clear"><span class="status-dot" style="background:{STATUS["good"]};"></span>'
-                'No active stress signals. Conditions appear stable.</span>',
-                unsafe_allow_html=True,
-            )
-        st.markdown(
-            f'<div style="color:{INK_MUTED}; font-size:0.8rem; margin-top:0.85rem; line-height:1.5;">'
-            "The score counts how many of seven stress conditions are active at once, including an "
-            "inverted yield curve. A reading of 4 or more trips the recession-watch threshold. "
-            "Backtested against every NBER recession since 1959: it catches all 9, with about 43% "
-            "of flagged months turning out to be false alarms (not a forecast).</div>",
-            unsafe_allow_html=True,
-        )
+    st.markdown(ui.signal_banner(score, status, label, as_of, active, SIGNAL_NOTE), unsafe_allow_html=True)
 
 
 def briefing_section(df: pd.DataFrame) -> None:
@@ -528,77 +259,49 @@ def briefing_section(df: pd.DataFrame) -> None:
     b = build_briefing(df)
     if b is None:
         return
-    st.markdown('<div class="section-label">This month in brief</div>', unsafe_allow_html=True)
-    tone_colors = {"warn": STATUS["warning"], "good": STATUS["good"], "neutral": INK_MUTED}
-    rows = "".join(
-        f'<div class="brief-item"><span class="brief-dot" style="background:{tone_colors[item.tone]};"></span>'
-        f"<span>{item.text}</span></div>"
-        for item in [b.score_item] + b.items
-    )
-    quiet_html = ""
-    if b.quiet:
-        names = b.quiet[0] if len(b.quiet) == 1 else ", ".join(b.quiet[:-1]) + " and " + b.quiet[-1]
-        quiet_html = f'<div class="brief-quiet">Little change in {names}.</div>'
-    st.markdown(
-        f"""
-        <div class="brief-card">
-            <div class="brief-head">
-                <span class="brief-title">{b.latest_label}</span>
-                <span class="brief-vs">vs {b.previous_label} &nbsp;·&nbsp; written automatically from each data refresh</span>
-            </div>
-            {rows}
-            {quiet_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(ui.section("This month in brief"), unsafe_allow_html=True)
+    items = [(item.text, item.tone) for item in [b.score_item] + b.items]
+    st.markdown(ui.briefing(b.latest_label, b.previous_label, items, b.quiet), unsafe_allow_html=True)
 
 
-def _kpi_tile(df: pd.DataFrame, key: str) -> None:
-    # renders directly into the caller's current container context.
+def kpi_tile(df: pd.DataFrame, key: str) -> ui.Tile:
     meta = INDICATOR_META[key]
     available = df.dropna(subset=[key])
-    delta = None
-    if not available.empty:
-        r = available.iloc[-1]
-        as_of = r["date"].strftime("%b %Y")
-        value_str = meta["fmt"].format(r[key])
-        mom = r.get(f"{key}_mom_pct")
-        if pd.notna(mom):
-            delta = f"{mom:+.2f}% MoM"
-        elif f"{key}_mom_pct" not in df.columns and len(available) > 1:
-            # the yield spread is already a gap between two rates, so a percent
-            # change of it is meaningless; show the change in points instead
-            # (this also keeps its card the same height as the others)
-            delta = f"{r[key] - available[key].iloc[-2]:+.2f}pt MoM"
-    else:
-        as_of = ""
-        value_str = "N/A"
-
-    st.metric(label=meta["label"], value=value_str, delta=delta)
-    st.markdown(f'<div class="tile-asof">as of {as_of}</div>', unsafe_allow_html=True)
-    st.plotly_chart(
-        sparkline(df, key, meta["color"]),
-        width="stretch",
-        config={"displayModeBar": False},
-        key=f"spark_{key}",
+    if available.empty:
+        return ui.Tile(label=meta["label"], value="N/A")
+    r = available.iloc[-1]
+    change, delta = None, None
+    mom = r.get(f"{key}_mom_pct")
+    if pd.notna(mom):
+        delta = round(float(mom), 2)
+        change = f"{mom:+.2f}% MoM"
+    elif f"{key}_mom_pct" not in df.columns and len(available) > 1:
+        # the yield spread is already a gap between two rates, so a percent
+        # change of it is meaningless; show the change in points instead
+        points = float(r[key] - available[key].iloc[-2])
+        delta = round(points, 2)
+        change = f"{points:+.2f}pt MoM"
+    return ui.Tile(
+        label=meta["label"],
+        value=meta["fmt"].format(r[key]),
+        change=change,
+        delta=delta,
+        tone=theme.change_tone(theme.GOOD_DIRECTION[key], delta),
+        caption=f"as of {r['date']:%b %Y}",
+        spark=ui.sparkline_svg(available[key].tail(24).tolist(), meta["slot"]),
     )
 
 
 def kpi_grid(df: pd.DataFrame, selected: list[str]) -> None:
-    st.markdown('<div class="section-label">Latest readings</div>', unsafe_allow_html=True)
-    for row_start in range(0, len(selected), KPI_TILES_PER_ROW):
-        row_keys = selected[row_start:row_start + KPI_TILES_PER_ROW]
-        cols = st.columns(KPI_TILES_PER_ROW, gap="medium")
-        for col, key in zip(cols, row_keys):
-            with col.container(border=True, key=f"statcard_{key}"):
-                _kpi_tile(df, key)
-        for col in cols[len(row_keys):]:
-            col.empty()
+    st.markdown(ui.section("Latest readings"), unsafe_allow_html=True)
+    st.markdown(ui.tile_grid([kpi_tile(df, key) for key in selected], columns=KPI_TILES_PER_ROW),
+                unsafe_allow_html=True)
 
 
 def trends(df: pd.DataFrame, selected: list[str]) -> None:
-    st.markdown('<div class="section-label">Indicator trends</div>', unsafe_allow_html=True)
+    t = theme.tokens()
+    palette = theme.series_palette()
+    st.markdown(ui.section("Indicator trends"), unsafe_allow_html=True)
     tab_levels, tab_mom = st.tabs(["Levels", "Month-over-month %"])
 
     with tab_levels:
@@ -618,12 +321,13 @@ def trends(df: pd.DataFrame, selected: list[str]) -> None:
         for i, key in enumerate(selected):
             r, c = i // cols_n + 1, i % cols_n + 1
             meta = INDICATOR_META[key]
+            color = palette[meta["slot"]]
             s = df[["date", key]].dropna()
             fig.add_trace(
                 go.Scatter(
                     x=s["date"], y=s[key], mode="lines", name=meta["label"],
-                    line=dict(color=meta["color"], width=2),
-                    fill="tozeroy", fillcolor=_rgba(meta["color"], 0.06),
+                    line=dict(color=color, width=2),
+                    fill="tozeroy", fillcolor=rgba(color, 0.06),
                     hovertemplate=f"%{{x|%b %Y}} &nbsp; %{{y:,.1f}} {meta['unit']}<extra></extra>",
                 ),
                 row=r, col=c,
@@ -631,17 +335,17 @@ def trends(df: pd.DataFrame, selected: list[str]) -> None:
         fig.update_layout(
             height=210 * rows_n + 30,
             showlegend=False,
-            font=dict(family=FONT, color=INK_SECONDARY, size=12),
+            font=dict(family=FONT, color=t["INK_2"], size=12),
             margin=dict(l=0, r=8, t=30, b=0),
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            hoverlabel=dict(bgcolor=SURFACE, bordercolor=GRIDLINE, font=dict(family=FONT, color=INK_PRIMARY)),
+            hoverlabel=dict(bgcolor=t["SURFACE"], bordercolor=t["BORDER"], font=dict(family=FONT, color=t["INK"])),
         )
-        fig.update_xaxes(showgrid=False, showline=True, linecolor=GRIDLINE, tickfont=dict(color=INK_MUTED, size=11))
-        fig.update_yaxes(showgrid=True, gridcolor=GRIDLINE, zeroline=False, tickfont=dict(color=INK_MUTED, size=11))
+        fig.update_xaxes(showgrid=False, showline=True, linecolor=t["BORDER"], tickfont=dict(color=t["INK_2"], size=11))
+        fig.update_yaxes(showgrid=True, gridcolor=t["BORDER"], zeroline=False, tickfont=dict(color=t["INK_2"], size=11))
         for ann in fig.layout.annotations:  # subplot titles
-            ann.font.update(size=13, color=INK_PRIMARY)
+            ann.font.update(size=13, color=t["HEADING"])
             ann.update(x=ann.x, xanchor="center")
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
     with tab_mom:
         st.caption("Month-over-month percent change. Already on a common scale, so all series share one axis.")
@@ -655,30 +359,31 @@ def trends(df: pd.DataFrame, selected: list[str]) -> None:
             fig.add_trace(go.Scatter(
                 x=s["date"], y=s[col],
                 name=meta["label"], mode="lines",
-                line=dict(color=meta["color"], width=2),
+                line=dict(color=palette[meta["slot"]], width=2),
                 hovertemplate=f"{meta['label']}: %{{y:+.2f}}%<extra></extra>",
             ))
-        fig.add_hline(y=0, line_color=INK_MUTED, line_width=1)
-        fig = base_layout(fig, height=430)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        fig.add_hline(y=0, line_color=t["INK_2"], line_width=1)
+        fig = plotly_layout(fig, height=430)
+        st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
 
 def signal_history(df: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label">Signal history</div>', unsafe_allow_html=True)
+    t = theme.tokens()
+    st.markdown(ui.section("Signal history"), unsafe_allow_html=True)
 
     fig = go.Figure(go.Scatter(
         x=df["date"], y=df["signal_score"], mode="lines",
-        line=dict(color="#2a78d6", width=2, shape="hv"),
-        fill="tozeroy", fillcolor="rgba(42,120,214,0.10)",
+        line=dict(color=t["HEADING"], width=2, shape="hv"),
+        fill="tozeroy", fillcolor=rgba(t["HEADING"], 0.10),
         hovertemplate="Signal score: %{y} of 7<extra></extra>",
     ))
-    fig.add_hline(y=4, line_dash="dot", line_color=STATUS["critical"], line_width=1.5,
+    fig.add_hline(y=4, line_dash="dot", line_color=t["BAD"], line_width=1.5,
                   annotation_text="Recession-watch threshold",
                   annotation_position="top left",
-                  annotation_font=dict(color=STATUS["critical"], size=11))
-    fig = base_layout(fig, height=230)
+                  annotation_font=dict(color=t["BAD"], size=11))
+    fig = plotly_layout(fig, height=230)
     fig.update_yaxes(range=[0, 7.3], dtick=1)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
     flag_cols = list(FLAG_DESCRIPTIONS.keys())
     heat = df[["date"] + flag_cols].copy()
@@ -689,50 +394,33 @@ def signal_history(df: pd.DataFrame) -> None:
     fig2 = go.Figure(go.Heatmap(
         z=z, x=heat.index, y=[FLAG_DESCRIPTIONS[c] for c in flag_cols],
         xgap=0, ygap=5, showscale=False,
-        colorscale=[[0, "#e5e3da"], [1, STATUS["critical"]]],
+        colorscale=[[0, t["BORDER"]], [1, t["BAD"]]],
         zmin=0, zmax=1,
         hovertemplate="%{y}<br>%{x|%b %Y}: %{customdata}<extra></extra>",
         customdata=[["Active" if v else "Inactive" for v in row] for row in z],
     ))
     fig2.update_layout(
-        height=250, font=dict(family=FONT, color=INK_SECONDARY, size=12),
+        height=250, font=dict(family=FONT, color=t["INK_2"], size=12),
         margin=dict(l=0, r=8, t=6, b=0),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        hoverlabel=dict(bgcolor=t["SURFACE"], bordercolor=t["BORDER"], font=dict(family=FONT, color=t["INK"])),
     )
-    fig2.update_xaxes(showgrid=False, showline=False, tickfont=dict(color=INK_MUTED))
-    fig2.update_yaxes(showgrid=False, showline=False, tickfont=dict(color=INK_MUTED, size=11), autorange="reversed")
-    st.plotly_chart(fig2, width="stretch", config={"displayModeBar": False})
+    fig2.update_xaxes(showgrid=False, showline=False, tickfont=dict(color=t["INK_2"]))
+    fig2.update_yaxes(showgrid=False, showline=False, tickfont=dict(color=t["INK_2"], size=11), autorange="reversed")
+    st.plotly_chart(fig2, width="stretch", config=PLOTLY_CONFIG)
 
 
 def glossary_section() -> None:
     with st.expander("Glossary: what each indicator means, and what's historically good vs. bad"):
-        for key, entry in GLOSSARY.items():
-            meta = INDICATOR_META[key]
-            st.markdown(
-                f"""
-                <div style="display:flex; gap:0.7rem; margin-bottom:1.1rem;">
-                    <span style="width:9px; height:9px; border-radius:50%; background:{meta['color']}; margin-top:0.4rem; flex:none;"></span>
-                    <div>
-                        <div style="font-weight:660; color:{INK_PRIMARY};">{meta['label']}</div>
-                        <div style="color:{INK_SECONDARY}; font-size:0.9rem; margin-top:0.15rem; line-height:1.5;">{entry['what']}</div>
-                        <div style="color:{INK_MUTED}; font-size:0.85rem; margin-top:0.3rem; line-height:1.5;">{entry['context']}</div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        entries = [
+            (INDICATOR_META[key]["slot"], INDICATOR_META[key]["label"], entry["what"], entry["context"])
+            for key, entry in GLOSSARY.items()
+        ]
+        st.markdown(ui.glossary(entries), unsafe_allow_html=True)
 
 
 def footer() -> None:
-    st.markdown(
-        f"""
-        <div class="footer">
-            <span>Source: Federal Reserve Economic Data (FRED), St. Louis Fed</span>
-            <span>Pipeline: Python &rarr; Airflow &rarr; dbt &rarr; Streamlit &nbsp;·&nbsp; refreshed daily via GitHub Actions</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(ui.footer(FOOTER_SOURCE, FOOTER_PIPELINE), unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -745,7 +433,7 @@ RANGE_PRESETS = {"6M": 6, "1Y": 12, "2Y": 24, "5Y": 60, "10Y": 120, "All": None}
 
 
 def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    st.sidebar.markdown('<div class="section-label">Filters</div>', unsafe_allow_html=True)
+    st.sidebar.markdown(ui.sidebar_label("Filters"), unsafe_allow_html=True)
 
     min_date = df["date"].min().date()
     max_date = df["date"].max().date()
@@ -846,7 +534,7 @@ def revisions_page() -> None:
 
 
 def main() -> None:
-    inject_css()
+    apply_theme()
     nav = st.navigation([
         st.Page(national_page, title="National overview", url_path="national", default=True),
         st.Page(states_page, title="State by state", url_path="states"),
