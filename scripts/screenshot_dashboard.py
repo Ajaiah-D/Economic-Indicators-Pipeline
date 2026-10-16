@@ -16,6 +16,7 @@ against the painted page colour so a wrong-mode shot fails loudly.
 from __future__ import annotations
 
 import argparse
+import socket
 import subprocess
 import sys
 import tempfile
@@ -40,9 +41,11 @@ DESKTOP = {"width": 1200, "height": 750}
 PHONE = {"width": 390, "height": 844}
 
 
-def wait_for_server(base: str, timeout: float = 90) -> None:
+def wait_for_server(base: str, server: subprocess.Popen, timeout: float = 90) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if server.poll() is not None:
+            raise SystemExit(f"Streamlit server exited early (code {server.returncode}) before answering at {base}")
         try:
             with urllib.request.urlopen(f"{base}/_stcore/health", timeout=2) as resp:
                 if resp.status == 200:
@@ -94,6 +97,13 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     base = f"http://localhost:{args.port}"
 
+    try:
+        socket.create_connection(("localhost", args.port), 1).close()
+    except OSError:
+        pass
+    else:
+        raise SystemExit(f"Port {args.port} is already in use; stop that server or pass --port")
+
     server = subprocess.Popen(
         [str(VENV_PY), "-m", "streamlit", "run", "dashboard/app.py",
          "--server.headless", "true", "--server.port", str(args.port),
@@ -101,7 +111,7 @@ def main() -> None:
         cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
     )
     try:
-        wait_for_server(base)
+        wait_for_server(base, server)
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             for scheme in ("light", "dark"):
@@ -114,11 +124,11 @@ def main() -> None:
                 if scheme == "light":
                     # the breadcrumb's Home link leads back to the national page
                     open_page(page, base, *PAGES["states"])
-                    page.get_by_role("link", name="Home").click()
+                    page.get_by_role("link", name="Home", exact=True).click()
                     page.get_by_role("heading", name=PAGES["national"][1], level=1).wait_for(timeout=60_000)
                     print("  breadcrumb Home link: OK")
                     # GOV.UK focus ring on the Home link
-                    page.get_by_role("link", name="Home").focus()
+                    page.get_by_role("link", name="Home", exact=True).focus()
                     page.wait_for_timeout(300)
                     page.screenshot(path=str(out / "focus-ring-light.png"),
                                     clip={"x": 0, "y": 0, "width": DESKTOP["width"], "height": 320})
@@ -136,7 +146,12 @@ def main() -> None:
             ctx.close()
             browser.close()
     finally:
-        server.terminate()
+        if sys.platform == "win32":
+            # the venv launcher's child process otherwise survives and keeps the port
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(server.pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            server.terminate()
         try:
             server.wait(timeout=15)
         except subprocess.TimeoutExpired:
