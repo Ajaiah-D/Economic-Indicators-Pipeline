@@ -184,3 +184,80 @@ def test_change_tone_rejects_an_unknown_direction():
 )
 def test_arrow_always_shows_the_actual_direction(delta, expected):
     assert theme.arrow(delta) == expected
+
+
+import plotly.graph_objects as go
+
+
+def _oklab(hex_color: str) -> tuple[float, float, float]:
+    def lin(channel: int) -> float:
+        c = channel / 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (lin(int(hex_color[i:i + 2], 16)) for i in (1, 3, 5))
+    l_ = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3)
+    m_ = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3)
+    s_ = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3)
+    return (
+        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+    )
+
+
+def _delta_e(a: str, b: str) -> float:
+    return 100 * math.dist(_oklab(a), _oklab(b))
+
+
+@pytest.mark.parametrize("name", ["light", "dark"])
+def test_series_palette_has_eight_slots_clear_of_status_colours(name):
+    tokens = theme.LIGHT if name == "light" else theme.DARK
+    palette = theme.SERIES[name]
+    assert len(palette) == 8 == len(set(palette))
+    for colour in palette:
+        assert colour not in (tokens["GOOD"], tokens["BAD"])
+        assert _delta_e(colour, tokens["GOOD"]) >= 10, colour
+        assert _delta_e(colour, tokens["BAD"]) >= 10, colour
+
+
+def test_series_palette_follows_mode(monkeypatch):
+    monkeypatch.setattr(theme, "_theme_type", lambda: "dark")
+    assert theme.series_palette() == theme.SERIES["dark"]
+    assert theme.series_color(3) == theme.SERIES["dark"][3]
+    assert theme.series_palette("light") == theme.SERIES["light"]
+
+
+@pytest.mark.parametrize("ramp, steps", [(theme.SEQ_TEAL, 5), (theme.SEQ_PURPLE, 5), (theme.DIVERGING, 7)])
+def test_ramps_exist_for_both_modes(ramp, steps):
+    assert set(ramp) == {"light", "dark"}
+    assert len(ramp["light"]) == len(ramp["dark"]) == steps
+
+
+def test_colorscale_spreads_steps_from_zero_to_one():
+    scale = theme.colorscale(["#000000", "#777777", "#ffffff"])
+    assert scale == [[0.0, "#000000"], [0.5, "#777777"], [1.0, "#ffffff"]]
+
+
+@pytest.mark.parametrize("name", ["light", "dark"])
+def test_plotly_layout_is_theme_aware_and_square(name):
+    tokens = theme.LIGHT if name == "light" else theme.DARK
+    fig = theme.plotly_layout(go.Figure(go.Scatter(x=[1, 2], y=[3, 4])), height=300, theme_mode=name)
+    layout = fig.layout
+    assert layout.height == 300
+    assert layout.paper_bgcolor == layout.plot_bgcolor == "rgba(0,0,0,0)"
+    assert layout.font.family == theme.FONT
+    assert layout.font.color == tokens["INK_2"]
+    assert layout.hovermode == "x unified"
+    assert layout.xaxis.showgrid is False
+    assert layout.yaxis.showgrid is True
+    assert layout.yaxis.gridcolor == tokens["BORDER"]
+    assert layout.hoverlabel.bgcolor == tokens["SURFACE"]
+
+
+def test_plotly_layout_hovermode_can_be_overridden():
+    fig = theme.plotly_layout(go.Figure(), height=200, hovermode="closest", theme_mode="light")
+    assert fig.layout.hovermode == "closest"
+
+
+def test_plotly_config_hides_the_modebar():
+    assert theme.PLOTLY_CONFIG == {"displayModeBar": False}

@@ -114,6 +114,83 @@ def change_tone(good_direction: str, delta: float | None) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Chart palettes, one list per mode. Validated with the dataviz skill's
+# validate_palette.js against each mode's PAGE and SURFACE (civic-ui plan,
+# Task 3); re-run it after changing any hex.
+#   light vs #ffffff and #f3f3f3: all PASS; worst adjacent CVD dE 18.1
+#     (#009b9f/#7a6100, deutan), normal-vision dE 20.8, all >= 3:1
+#   dark vs #151b22 and #1e2630: all PASS; worst adjacent CVD dE 16.7
+#     (#5e8fed/#b3487e, deutan), normal-vision dE 20.9, all >= 3:1
+#   every sequential ramp and diverging arm: --ordinal ALL CHECKS PASS
+# Series never reuse GOOD/BAD (OKLab dE >= 12 from both, in either mode);
+# no slot is a pure blue. Slot order = app.INDICATOR_META order.
+# --------------------------------------------------------------------------- #
+SERIES = {
+    # 0 violet, 1 ochre, 2 plum, 3 olive, 4 magenta, 5 slate blue, 6 dark gold, 7 teal
+    "light": ["#654db6", "#b27a00", "#8e3b94", "#7f9200", "#a2316d", "#4e82e5", "#7a6100", "#009b9f"],
+    "dark": ["#7561c5", "#c18500", "#9f51a4", "#8b9e0f", "#b3487e", "#5e8fed", "#8d7200", "#00a8ad"],
+}
+
+# Sequential ramps (choropleth magnitude), low -> high. In dark mode the
+# anchor flips: low values sit near the dark surface, high values are light.
+SEQ_TEAL = {
+    "light": ["#26c0cf", "#009fac", "#007e89", "#005e66", "#004148"],
+    "dark": ["#00646d", "#00818c", "#009fac", "#3abbc8", "#5ed9e6"],
+}
+SEQ_PURPLE = {
+    "light": ["#bf93f1", "#a074d0", "#8256af", "#65398f", "#491a70"],
+    "dark": ["#694191", "#835bae", "#9f76cb", "#bb92e9", "#d5b2fe"],
+}
+# Diverging (polarity): ochre arm for negative, neutral grey midpoint, slate
+# arm for positive; both arms recede toward the midpoint.
+DIVERGING = {
+    "light": ["#875800", "#b37903", "#da9e3f", "#eef0f2", "#73b0ee", "#4984bf", "#1d5b92"],
+    "dark": ["#d79f4c", "#b07a20", "#875800", "#2a333d", "#32669a", "#558ac0", "#79b0e8"],
+}
+
+PLOTLY_CONFIG = {"displayModeBar": False}
+
+
+def series_palette(theme_mode: str | None = None) -> list[str]:
+    return list(SERIES[theme_mode or mode()])
+
+
+def series_color(slot: int, theme_mode: str | None = None) -> str:
+    return series_palette(theme_mode)[slot]
+
+
+def colorscale(steps: list[str]) -> list[list]:
+    """Evenly spaced Plotly colorscale from a list of hex steps."""
+    last = len(steps) - 1
+    return [[round(i / last, 4), colour] for i, colour in enumerate(steps)]
+
+
+def plotly_layout(fig: go.Figure, height: int, *, hovermode: str = "x unified",
+                  theme_mode: str | None = None) -> go.Figure:
+    """The one chart look: transparent background, Arial, hairline y grid in
+    BORDER, no x grid, unified hover. Callers pass PLOTLY_CONFIG to
+    st.plotly_chart to hide the modebar."""
+    t = tokens(theme_mode)
+    fig.update_layout(
+        height=height,
+        font=dict(family=FONT, color=t["INK_2"], size=12),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                    font=dict(color=t["INK_2"]), bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=0, r=8, t=34, b=0),
+        hovermode=hovermode,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        hoverlabel=dict(bgcolor=t["SURFACE"], bordercolor=t["BORDER"],
+                        font=dict(family=FONT, color=t["INK"])),
+    )
+    fig.update_xaxes(showgrid=False, showline=True, linecolor=t["BORDER"], zeroline=False,
+                     tickfont=dict(color=t["INK_2"]))
+    fig.update_yaxes(showgrid=True, gridcolor=t["BORDER"], gridwidth=1, zeroline=False,
+                     showline=False, tickfont=dict(color=t["INK_2"]))
+    return fig
+
+
+# --------------------------------------------------------------------------- #
 # LEGACY tokens and helpers below: still imported by app.py, states_view.py
 # and revisions_view.py. Task 6 of the civic-ui plan deletes this block.
 # --------------------------------------------------------------------------- #
