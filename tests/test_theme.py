@@ -269,3 +269,14 @@ def test_missing_values_include_pandas_na():
     assert theme.change_tone("up", pd.NA) == "neutral"
     assert theme.change_tone("down", pd.NA) == "neutral"
     assert theme.arrow(pd.NA) == "▬"
+
+
+LEGACY_NAMES = (
+    "INK_PRIMARY", "INK_SECONDARY", "INK_MUTED", "GRIDLINE", "SURFACE", "PAGE", "SIDEBAR",
+    "STATUS", "SEQ_BLUE", "SEQ_GREEN", "DIV_AMBER_BLUE", "base_layout", "sparkline",
+)
+
+
+@pytest.mark.parametrize("name", LEGACY_NAMES)
+def test_legacy_theme_names_are_gone(name):
+    assert not hasattr(theme, name)

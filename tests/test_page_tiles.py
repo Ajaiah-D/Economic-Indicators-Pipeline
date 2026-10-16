@@ -1,6 +1,8 @@
 import pandas as pd
 
 import app
+import revisions_view
+import states_view
 
 
 def _national_frame() -> pd.DataFrame:
@@ -59,3 +61,56 @@ def test_status_for_score_keeps_three_states():
 def test_every_series_has_a_palette_slot():
     assert sorted(m["slot"] for m in app.INDICATOR_META.values()) == list(range(8))
     assert all("color" not in m for m in app.INDICATOR_META.values())
+
+
+def _state_frame() -> pd.DataFrame:
+    return pd.DataFrame({
+        "date": pd.to_datetime(["2025-01-01", "2026-07-01"]),
+        "unemployment_rate": [4.0, 4.5],
+        "unemployment_rate_yoy": [None, 0.3],
+        "unemployment_rank": [None, 20],
+        "house_price_index_yoy_pct": [5.2, None],
+        "hpi_growth_rank": [3, None],
+        "per_capita_income": [70123.0, None],
+        "per_capita_income_yoy_pct": [4.1, None],
+        "income_rank": [1, None],
+    })
+
+
+def test_state_tiles():
+    unemployment, hpi, income = states_view.kpi_tiles(_state_frame(), 51)
+    assert (unemployment.label, unemployment.value) == ("Unemployment rate", "4.5%")
+    assert unemployment.change == "+0.3pp YoY" and unemployment.tone == "bad"
+    assert unemployment.caption == "as of Jul 2026 · 20th lowest of 51"
+    assert (hpi.label, hpi.value, hpi.change) == ("House-price growth", "+5.2% YoY", None)
+    assert hpi.caption == "as of Q1 2025 · 3rd fastest-growing of 51"
+    assert (income.label, income.value) == ("Per-capita income", "$70,123")
+    assert income.change == "+4.1% YoY" and income.tone == "good"
+    assert income.caption == "as of 2025 · highest of 51"
+
+
+def test_state_tiles_show_na_without_data():
+    empty = _state_frame().iloc[0:0]
+    labels = [(t.label, t.value) for t in states_view.kpi_tiles(empty, 51)]
+    assert labels == [("Unemployment rate", "N/A"), ("House-price growth", "N/A"), ("Per-capita income", "N/A")]
+
+
+def test_revision_tiles():
+    rev = pd.DataFrame({
+        "date": pd.to_datetime(["2008-07-01", "2008-10-01", "2009-01-01"]),
+        "revision_pp": [0.5, -1.2, 0.1],
+        "sign_flip": [False, True, False],
+    })
+    flips, largest, average = revisions_view.revision_tiles(rev)
+    assert (flips.label, flips.value) == ("Quarters whose growth later flipped sign", "1 of 3")
+    assert flips.caption == "reported growth when the economy was shrinking, or vice versa"
+    assert (largest.value, largest.change, largest.show_arrow) == ("-1.2pp", "Q4 2008", False)
+    assert largest.caption == "difference between the first print and today's estimate"
+    assert average.value == "0.60pp"
+    assert average.caption == "mean absolute change in quarterly growth since first print"
+
+
+def test_state_map_ramps_cover_both_modes():
+    for spec in states_view.METRICS.values():
+        assert set(spec["ramp"]) == {"light", "dark"}
+        assert "colorscale" not in spec

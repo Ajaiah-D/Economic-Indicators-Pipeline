@@ -216,6 +216,11 @@ def updated_label(meta: dict) -> str:
         return ""
 
 
+def source_line(source: str, meta: dict) -> str:
+    updated = updated_label(meta)
+    return f"Source: {source}" + (f" · Data last changed {updated}" if updated else "")
+
+
 def header(df: pd.DataFrame, meta: dict) -> None:
     data_through = df["date"].max()
     through_str = data_through.strftime("%b %Y") if pd.notna(data_through) else "n/a"
@@ -524,12 +529,12 @@ def national_page() -> None:
 
 
 def states_page() -> None:
-    states_view.render(load_data())
+    states_view.render(load_data(), source_line("FRED, St. Louis Fed", load_metadata()))
     footer()
 
 
 def revisions_page() -> None:
-    revisions_view.render()
+    revisions_view.render(source_line("ALFRED, St. Louis Fed", load_metadata()))
     footer()
 
 
