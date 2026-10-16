@@ -272,13 +272,13 @@ def time_machine(v: pd.DataFrame) -> None:
         "why real-time policy is hard."
     )
 
-    left, right = st.columns([1.2, 1], gap="medium")
+    # full-width row, so the four options wrap natively instead of being cut off
+    moment = st.segmented_control(
+        "Moment", options=list(MOMENTS), default="Financial crisis (Sep 2008)",
+        key="tm_moment", label_visibility="collapsed",
+    )
+    left, _ = st.columns([1, 1.2], gap="medium")
     with left:
-        moment = st.segmented_control(
-            "Moment", options=list(MOMENTS), default="Financial crisis (Sep 2008)",
-            key="tm_moment", label_visibility="collapsed",
-        )
-    with right:
         series_name = st.selectbox("Series", list(TIME_MACHINE_SERIES), key="tm_series",
                                    label_visibility="collapsed")
 
@@ -290,7 +290,7 @@ def time_machine(v: pd.DataFrame) -> None:
             max_value=max_d,
             value=pd.Timestamp("2008-09-15").to_pydatetime(),
             format="MMM YYYY",
-            key="tm_slider",
+            key="civic_tm_slider",
         ))
     else:
         cutoff = MOMENTS[moment]

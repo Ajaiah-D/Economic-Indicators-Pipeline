@@ -9,8 +9,8 @@ parses inside it. Text lines are div/span with ARIA roles rather than
 p/ul/li/h1, because Streamlit's Markdown styles those tags with higher
 specificity than a class (and adds anchor links to headings).
 
-The CSS styles only the civic-* classes emitted here and the page
-container's st-key-civic_page class. It never targets Streamlit's internal
+The CSS styles only the civic-* classes emitted here and the st-key-civic*
+classes Streamlit derives from the widget keys this app sets. It never targets Streamlit's internal
 test ids or other internal classes, which change between releases.
 """
 
@@ -115,6 +115,14 @@ _RULES = (
     ".civic-glossary-context{color:var(--civic-ink-2);font-size:0.88rem;line-height:1.5;margin:0.3rem 0 0 0}"
     ".civic-footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0.5rem;"
     "border-top:1px solid var(--civic-border);color:var(--civic-ink-2);font-size:0.85rem;margin-top:2rem;padding-top:1rem}"
+    # the pills and the date slider are drawn by Streamlit with fully rounded
+    # corners; the st-key-* class comes from the widget's key
+    ".st-key-civic_indicators button{border-radius:0}"
+    ".st-key-civic_tm_slider *{border-radius:0}"
+    # tiles in a row share row tracks, so labels, values, changes, captions and
+    # sparklines line up across tiles; the flex layout above is the fallback
+    "@supports (grid-template-rows: subgrid){.civic-tiles{row-gap:0}"
+    ".civic-tile{display:grid;grid-row:span 5;grid-template-rows:subgrid;row-gap:0;margin-bottom:1rem}}"
     "@media (max-width:900px){.civic-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}"
     "@media (max-width:640px){.civic-tiles{grid-template-columns:minmax(0,1fr)}"
     ".civic-banner{grid-template-columns:minmax(0,1fr);gap:1rem}.civic-title{font-size:1.75rem}}"
@@ -270,10 +278,13 @@ def _tile(t: Tile) -> str:
     else:
         arrow = f'<span aria-hidden="true">{theme.arrow(None if pd.isna(t.delta) else t.delta)} </span>' if t.show_arrow else ""
         change = f'<div class="civic-tile-change civic-{t.tone}">{arrow}{esc(t.change)}</div>'
-    caption = f'<div class="civic-tile-caption">{esc(t.caption)}</div>' if t.caption else ""
+    # always five children (label, value, change, caption, spark) so the
+    # subgrid rows line up across tiles
+    caption = f'<div class="civic-tile-caption">{esc(t.caption)}</div>'
+    spark = t.spark or '<div class="civic-spark-slot" aria-hidden="true"></div>'
     return (
         f'<div class="civic-tile" role="listitem"><div class="civic-tile-label">{esc(t.label)}</div>'
-        f'<div class="civic-tile-value">{esc(t.value)}</div>{change}{caption}{t.spark}</div>'
+        f'<div class="civic-tile-value">{esc(t.value)}</div>{change}{caption}{spark}</div>'
     )
 
 
