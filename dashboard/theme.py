@@ -12,6 +12,8 @@ the next rerun (Streamlit only reports the theme with a rerun).
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -65,6 +67,50 @@ def mode() -> str:
 
 def tokens(theme_mode: str | None = None) -> dict[str, str]:
     return DARK if (theme_mode or mode()) == "dark" else LIGHT
+
+
+# --------------------------------------------------------------------------- #
+# Change arrows. The arrow always shows the actual direction; the colour says
+# whether that move is good for the economy. The text value is always shown
+# next to it, so colour is never the only cue. Keys are the series in
+# app.INDICATOR_META (a test keeps them identical); the directions agree with
+# briefing.py's warn/good tones.
+# --------------------------------------------------------------------------- #
+GOOD_DIRECTION: dict[str, str] = {
+    "cpi": "none",
+    "unemployment_rate": "down",
+    "u6_rate": "down",
+    "gdp": "up",
+    "fed_funds_rate": "none",
+    "housing_starts": "up",
+    "consumer_sentiment": "up",
+    "yield_spread": "up",
+}
+
+ARROW_UP = "▲"
+ARROW_DOWN = "▼"
+ARROW_FLAT = "▬"
+
+
+def _is_zero_or_missing(delta: float | None) -> bool:
+    return delta is None or math.isnan(float(delta)) or float(delta) == 0.0
+
+
+def arrow(delta: float | None) -> str:
+    if _is_zero_or_missing(delta):
+        return ARROW_FLAT
+    return ARROW_UP if float(delta) > 0 else ARROW_DOWN
+
+
+def change_tone(good_direction: str, delta: float | None) -> str:
+    """"good" if the move matches the good direction, "bad" if it goes
+    against it, "neutral" for no change or an indicator with no good side."""
+    if good_direction not in ("up", "down", "none"):
+        raise ValueError(f"unknown good direction {good_direction!r}")
+    if good_direction == "none" or _is_zero_or_missing(delta):
+        return "neutral"
+    rising = float(delta) > 0
+    return "good" if rising == (good_direction == "up") else "bad"
 
 
 # --------------------------------------------------------------------------- #
