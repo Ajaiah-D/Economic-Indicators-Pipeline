@@ -482,6 +482,7 @@ def sidebar(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         default=list(INDICATOR_META.keys()),
         selection_mode="multi",
         format_func=lambda k: INDICATOR_META[k]["short"],
+        key="civic_indicators",
     )
 
     mask = (df["date"].dt.date >= start) & (df["date"].dt.date <= end)

@@ -293,25 +293,38 @@ def choropleth(df: pd.DataFrame, total_states: int) -> None:
         full_html=True,
         config={"displayModeBar": False, "responsive": False},
     )
-    # keep the iframe see-through so the map sits on the page colour in dark mode
-    html = html.replace("<head>", "<head><style>html,body{background:transparent}</style>", 1)
-    # the iframe's first paint can happen before it has its final size, which
-    # leaves the geo paths drawn at the wrong scale even though plotly's
-    # internal projection state is correct; one deferred redraw repaints from
-    # that (correct) state. Same pass also shrinks the map to fit narrow
-    # (phone-width) iframes -- a single one-time relayout, not Plotly's
-    # "responsive" auto-resize, which is what collapses the USA projection.
+    # keep the iframe see-through so the map sits on the page colour in dark
+    # mode, and hide its scrollbars: the fit below sizes the plot to the frame
+    html = html.replace(
+        "<head>", "<head><style>html,body{background:transparent;margin:0;overflow:hidden}</style>", 1
+    )
+    # The iframe's first paint can happen before it has its final size, and the
+    # frame's width changes with the window. So fit the plot to the frame's
+    # width (880px at most, aspect kept) on load, on every resize of the frame
+    # and once after the first plot, debounced. Plotly.relayout redraws, so no
+    # separate redraw is needed. This is a plain relayout, not Plotly's
+    # "responsive" auto-resize, which collapses the USA projection.
     html = html.replace(
         "</body>",
-        "<script>window.addEventListener('load',function(){setTimeout(function(){"
+        "<script>(function(){var W=880,H=470,last=0,t=null;"
+        "function fit(){var gd=document.querySelector('.js-plotly-plot');"
+        "if(!gd||!window.Plotly||!gd._fullLayout)return;"
+        "var w=Math.min(W,document.documentElement.clientWidth);if(!w||w===last)return;last=w;"
+        "var h=Math.round(w*H/W);gd.style.width=w+'px';gd.style.height=h+'px';"
+        "Plotly.relayout(gd,{width:w,height:h});}"
+        "function later(){clearTimeout(t);t=setTimeout(fit,120);}"
+        "window.addEventListener('resize',later);window.addEventListener('load',later);"
+        "if(window.ResizeObserver){new ResizeObserver(later).observe(document.documentElement);}"
         "var gd=document.querySelector('.js-plotly-plot');"
-        "if(!gd||!window.Plotly)return;"
-        "var w=Math.min(880,document.documentElement.clientWidth||880);"
-        "if(w<860){Plotly.relayout(gd,{width:w,height:Math.round(w*470/880)});}"
-        "Plotly.redraw(gd);"
-        "},400);});</script></body>",
+        "if(gd&&gd.on){gd.on('plotly_afterplot',function(){if(!last)later();});}"
+        "})();</script></body>",
     )
-    components.html(html, height=490)
+    # st.components.v1.html is deprecated and slated for removal; st.iframe
+    # replaces it but only exists from Streamlit 1.56 (the floor is 1.53)
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=490)
+    else:
+        components.html(html, height=490)
     st.caption(f"{choice}, latest reading per state (as of {asof_str}).")
 
 

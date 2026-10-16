@@ -228,3 +228,38 @@ def test_sparkline_svg_drops_infinite_values():
     assert "nan" not in out and "inf" not in out
     assert 'points="0.00,26.00 100.00,2.00"' in out
     assert ui.sparkline_svg([float("inf"), 1.0], 0) == ""
+
+
+def test_every_tile_has_five_child_blocks():
+    # label, value, change, caption and spark slot, so a subgrid lines up
+    # across tiles whatever each one leaves out
+    tiles = [
+        ui.Tile("Bare", "1"),
+        ui.Tile("Caption only", "2", caption="a caption"),
+        ui.Tile("Full", "3", change="+1", delta=1.0, tone="good", caption="c", spark=ui.sparkline_svg([1.0, 2.0], 0)),
+        ui.Tile("No arrow", "4", change="Q1", show_arrow=False),
+    ]
+    for tile in tiles:
+        out = ui._tile(tile)
+        inner = out[len('<div class="civic-tile" role="listitem">'):-len("</div>")]
+        # top-level children only: track nesting depth over div/svg tags
+        depth, children = 0, 0
+        for m in re.finditer(r"<(/?)(div|svg)\b[^>]*?(/?)>", inner):
+            closing, selfclosing = m.group(1), m.group(3)
+            if not closing:
+                if depth == 0:
+                    children += 1
+                if not selfclosing:
+                    depth += 1
+            else:
+                depth -= 1
+        assert children == 5, (tile.label, children)
+    assert '<div class="civic-spark-slot" aria-hidden="true"></div>' in ui._tile(tiles[0])
+    assert '<div class="civic-tile-caption"></div>' in ui._tile(tiles[0])
+
+
+def test_css_rounds_nothing_on_the_keyed_widgets():
+    css = ui.build_css("light")
+    assert ".st-key-civic_indicators button{border-radius:0}" in css
+    assert ".st-key-civic_tm_slider *{border-radius:0}" in css
+    assert "@supports (grid-template-rows: subgrid)" in css
