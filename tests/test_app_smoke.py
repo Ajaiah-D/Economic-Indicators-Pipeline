@@ -38,6 +38,7 @@ def _render(page_name: str) -> None:
     # runs inside AppTest: only names imported here are available
     import app
 
+    app.apply_theme()
     getattr(app, page_name)()
 
 
@@ -59,3 +60,33 @@ def test_entry_point_renders_the_default_page():
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert len(at.markdown) > 0
+
+
+PAGE_TITLES = {"national_page": "National overview"}
+
+
+def _html(at: AppTest) -> str:
+    return "\n".join(m.value for m in at.markdown)
+
+
+@pytest.mark.parametrize("page_name, title", list(PAGE_TITLES.items()))
+def test_page_has_the_civic_layout(page_name, title):
+    at = _run_page(page_name)
+    assert not at.exception, [e.value for e in at.exception]
+    html = _html(at)
+    assert '<header class="civic-masthead">US Economic Indicators</header>' in html
+    assert f'aria-current="page">{title}</span>' in html
+    assert f'role="heading" aria-level="1">{title}</div>' in html
+    assert 'class="civic-tiles"' in html
+    assert 'class="civic-footer"' in html
+    assert len(at.metric) == 0  # tiles are HTML now, not st.metric
+    for old in ("hero-title", "section-label", "tile-asof"):
+        assert old not in html
+
+
+def test_national_page_has_one_tile_per_indicator_and_the_banner():
+    html = _html(_run_page("national_page"))
+    assert html.count('<div class="civic-tile" role="listitem">') == 8
+    assert 'class="civic-banner"' in html
+    assert 'class="civic-brief"' in html
+    assert "about 43% of flagged months turning out to be false alarms" in html

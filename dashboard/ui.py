@@ -17,6 +17,7 @@ test ids or other internal classes, which change between releases.
 from __future__ import annotations
 
 import html
+import math
 from dataclasses import dataclass
 
 import pandas as pd
@@ -289,7 +290,7 @@ def tile_grid(tiles: list[Tile], columns: int = 3) -> str:
 def sparkline_svg(values: list[float], slot: int) -> str:
     """Inline SVG sparkline coloured by series slot through CSS, so it
     follows the theme without a rerun. The y range is the data's own min-max."""
-    points = [float(v) for v in values if not pd.isna(v)]
+    points = [float(v) for v in values if not pd.isna(v) and math.isfinite(float(v))]
     if len(points) < 2:
         return ""
     lo, hi = min(points), max(points)

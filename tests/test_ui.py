@@ -221,3 +221,10 @@ def test_nullable_pandas_values_do_not_raise():
         assert "▬ " in out
     assert 'points="0.00,26.00 100.00,2.00"' in ui.sparkline_svg([1.0, pd.NA, None, 3.0], 0)
     assert ui.sparkline_svg([pd.NA, 1.0], 0) == ""
+
+
+def test_sparkline_svg_drops_infinite_values():
+    out = ui.sparkline_svg([1.0, float("inf"), 3.0, float("-inf")], 0)
+    assert "nan" not in out and "inf" not in out
+    assert 'points="0.00,26.00 100.00,2.00"' in out
+    assert ui.sparkline_svg([float("inf"), 1.0], 0) == ""

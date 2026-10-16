@@ -12,8 +12,6 @@ the next rerun (Streamlit only reports the theme with a rerun).
 
 from __future__ import annotations
 
-import math
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -93,7 +91,8 @@ ARROW_FLAT = "▬"
 
 
 def _is_zero_or_missing(delta: float | None) -> bool:
-    return delta is None or math.isnan(float(delta)) or float(delta) == 0.0
+    # pd.isna covers None, NaN and pandas NA, which float() would raise on
+    return delta is None or bool(pd.isna(delta)) or float(delta) == 0.0
 
 
 def arrow(delta: float | None) -> str:
