@@ -16,25 +16,18 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from theme import (
-    DIV_AMBER_BLUE,
-    GRIDLINE,
-    INK_MUTED,
-    INK_PRIMARY,
-    SEQ_BLUE,
-    SEQ_GREEN,
-    SURFACE,
-    base_layout,
-    rgba,
-)
+import theme
+import ui
+from theme import FONT, PLOTLY_CONFIG, plotly_layout, rgba
 
 REPO_ROOT = Path(__file__).parent.parent
 STATE_SNAPSHOT = REPO_ROOT / "data" / "state_dashboard.parquet"
 S3_KEY = "processed/state_indicators/part-0.parquet"
 
-STATE_LINE = "#2a78d6"   # selected state's series colour, fixed
-NATIONAL_LINE = INK_MUTED  # U.S. reference line, always the muted ink
-HPI_LINE = "#4a3aa7"
+# palette slots (theme.SERIES): the selected state is slot 0, its house-price
+# growth slot 2; the U.S. reference line is always secondary ink, dotted
+STATE_SLOT = 0
+HPI_SLOT = 2
 
 RANGE_PRESETS = {"5Y": 60, "10Y": 120, "20Y": 240, "All": None}
 
@@ -43,7 +36,7 @@ METRICS = {
         "col": "unemployment_rate",
         "rank_col": "unemployment_rank",
         "fmt": "{:.1f}%",
-        "colorscale": SEQ_BLUE,
+        "ramp": theme.SEQ_TEAL,
         "diverging": False,
         "rank_word": "lowest",
     },
@@ -51,7 +44,7 @@ METRICS = {
         "col": "house_price_index_yoy_pct",
         "rank_col": "hpi_growth_rank",
         "fmt": "{:+.1f}%",
-        "colorscale": DIV_AMBER_BLUE,
+        "ramp": theme.DIVERGING,
         "diverging": True,
         "rank_word": "fastest-growing",
     },
@@ -59,7 +52,7 @@ METRICS = {
         "col": "per_capita_income",
         "rank_col": "income_rank",
         "fmt": "${:,.0f}",
-        "colorscale": SEQ_GREEN,
+        "ramp": theme.SEQ_PURPLE,
         "diverging": False,
         "rank_word": "highest",
     },
@@ -119,71 +112,71 @@ def latest_by_state(df: pd.DataFrame, col: str, rank_col: str) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # Sections
 # --------------------------------------------------------------------------- #
-def _tile(label: str, value: str, asof: str, rank_phrase: str | None, delta: str | None = None,
-          delta_inverse: bool = False) -> None:
-    st.metric(
-        label=label,
-        value=value,
-        delta=delta,
-        delta_color=("inverse" if delta_inverse else "normal") if delta else "off",
-    )
-    bits = [f"as of {asof}"]
-    if rank_phrase:
-        bits.append(rank_phrase)
-    st.markdown(f'<div class="tile-asof">{" &nbsp;·&nbsp; ".join(bits)}</div>', unsafe_allow_html=True)
+def _caption(asof: str, rank_phrase: str | None) -> str:
+    return " \u00b7 ".join([f"as of {asof}"] + ([rank_phrase] if rank_phrase else []))
+
+
+def kpi_tiles(sdf: pd.DataFrame, total_states: int) -> list[ui.Tile]:
+    tiles = []
+
+    ur = sdf.dropna(subset=["unemployment_rate"])
+    if ur.empty:
+        tiles.append(ui.Tile("Unemployment rate", "N/A"))
+    else:
+        r = ur.iloc[-1]
+        yoy = r.get("unemployment_rate_yoy")
+        delta = round(float(yoy), 1) if pd.notna(yoy) else None
+        tiles.append(ui.Tile(
+            label="Unemployment rate",
+            value=f"{r['unemployment_rate']:.1f}%",
+            change=f"{yoy:+.1f}pp YoY" if delta is not None else None,
+            delta=delta,
+            tone=theme.change_tone("down", delta),
+            caption=_caption(r["date"].strftime("%b %Y"),
+                             _rank_phrase(r.get("unemployment_rank"), total_states, "lowest")),
+        ))
+
+    hpi = sdf.dropna(subset=["house_price_index_yoy_pct"])
+    if hpi.empty:
+        tiles.append(ui.Tile("House-price growth", "N/A"))
+    else:
+        r = hpi.iloc[-1]
+        tiles.append(ui.Tile(
+            label="House-price growth",
+            value=f"{r['house_price_index_yoy_pct']:+.1f}% YoY",
+            caption=_caption(_quarter(r["date"]),
+                             _rank_phrase(r.get("hpi_growth_rank"), total_states, "fastest-growing")),
+        ))
+
+    inc = sdf.dropna(subset=["per_capita_income"])
+    if inc.empty:
+        tiles.append(ui.Tile("Per-capita income", "N/A"))
+    else:
+        r = inc.iloc[-1]
+        yoy = r.get("per_capita_income_yoy_pct")
+        delta = round(float(yoy), 1) if pd.notna(yoy) else None
+        tiles.append(ui.Tile(
+            label="Per-capita income",
+            value=f"${r['per_capita_income']:,.0f}",
+            change=f"{yoy:+.1f}% YoY" if delta is not None else None,
+            delta=delta,
+            tone=theme.change_tone("up", delta),
+            caption=_caption(r["date"].strftime("%Y"),
+                             _rank_phrase(r.get("income_rank"), total_states, "highest")),
+        ))
+    return tiles
 
 
 def kpi_row(sdf: pd.DataFrame, total_states: int) -> None:
-    st.markdown('<div class="section-label">Latest readings</div>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3, gap="medium")
-
-    ur = sdf.dropna(subset=["unemployment_rate"])
-    with c1.container(border=True, key="statcard_st1"):
-        if ur.empty:
-            st.metric("Unemployment rate", "N/A")
-        else:
-            r = ur.iloc[-1]
-            yoy = r.get("unemployment_rate_yoy")
-            _tile(
-                "Unemployment rate",
-                f"{r['unemployment_rate']:.1f}%",
-                r["date"].strftime("%b %Y"),
-                _rank_phrase(r.get("unemployment_rank"), total_states, "lowest"),
-                delta=f"{yoy:+.1f}pp YoY" if pd.notna(yoy) else None,
-                delta_inverse=True,
-            )
-
-    hpi = sdf.dropna(subset=["house_price_index_yoy_pct"])
-    with c2.container(border=True, key="statcard_st2"):
-        if hpi.empty:
-            st.metric("House-price growth", "N/A")
-        else:
-            r = hpi.iloc[-1]
-            _tile(
-                "House-price growth",
-                f"{r['house_price_index_yoy_pct']:+.1f}% YoY",
-                _quarter(r["date"]),
-                _rank_phrase(r.get("hpi_growth_rank"), total_states, "fastest-growing"),
-            )
-
-    inc = sdf.dropna(subset=["per_capita_income"])
-    with c3.container(border=True, key="statcard_st3"):
-        if inc.empty:
-            st.metric("Per-capita income", "N/A")
-        else:
-            r = inc.iloc[-1]
-            yoy = r.get("per_capita_income_yoy_pct")
-            _tile(
-                "Per-capita income",
-                f"${r['per_capita_income']:,.0f}",
-                r["date"].strftime("%Y"),
-                _rank_phrase(r.get("income_rank"), total_states, "highest"),
-                delta=f"{yoy:+.1f}% YoY" if pd.notna(yoy) else None,
-            )
+    st.markdown(ui.section("Latest readings"), unsafe_allow_html=True)
+    st.markdown(ui.tile_grid(kpi_tiles(sdf, total_states), columns=3), unsafe_allow_html=True)
 
 
 def trend_charts(sdf: pd.DataFrame, national: pd.DataFrame, state_name: str, months: int | None) -> None:
-    st.markdown('<div class="section-label">Trends vs the nation</div>', unsafe_allow_html=True)
+    t = theme.tokens()
+    state_color = theme.series_color(STATE_SLOT)
+    hpi_color = theme.series_color(HPI_SLOT)
+    st.markdown(ui.section("Trends vs the nation"), unsafe_allow_html=True)
 
     if months is not None:
         cutoff = sdf["date"].max() - pd.DateOffset(months=months)
@@ -199,34 +192,35 @@ def trend_charts(sdf: pd.DataFrame, national: pd.DataFrame, state_name: str, mon
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=s["date"], y=s["unemployment_rate"], name=state_name,
-            line=dict(color=STATE_LINE, width=2),
+            line=dict(color=state_color, width=2),
             hovertemplate=f"{state_name}: %{{y:.1f}}%<extra></extra>",
         ))
         fig.add_trace(go.Scatter(
             x=n["date"], y=n["unemployment_rate"], name="U.S.",
-            line=dict(color=NATIONAL_LINE, width=2, dash="dot"),
+            line=dict(color=t["INK_2"], width=2, dash="dot"),
             hovertemplate="U.S.: %{y:.1f}%<extra></extra>",
         ))
-        fig = base_layout(fig, height=310)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        fig = plotly_layout(fig, height=310)
+        st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
     with right:
         st.caption(f"House-price growth, year-over-year: {state_name}")
         h = sdf.dropna(subset=["house_price_index_yoy_pct"])
         fig = go.Figure(go.Scatter(
             x=h["date"], y=h["house_price_index_yoy_pct"], name="HPI YoY",
-            line=dict(color=HPI_LINE, width=2),
-            fill="tozeroy", fillcolor=rgba(HPI_LINE, 0.07),
+            line=dict(color=hpi_color, width=2),
+            fill="tozeroy", fillcolor=rgba(hpi_color, 0.07),
             hovertemplate="%{y:+.1f}% YoY<extra></extra>",
         ))
-        fig.add_hline(y=0, line_color=INK_MUTED, line_width=1)
-        fig = base_layout(fig, height=310)
+        fig.add_hline(y=0, line_color=t["INK_2"], line_width=1)
+        fig = plotly_layout(fig, height=310)
         fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
 
 def choropleth(df: pd.DataFrame, total_states: int) -> None:
-    st.markdown('<div class="section-label">The whole map</div>', unsafe_allow_html=True)
+    t = theme.tokens()
+    st.markdown(ui.section("The whole map"), unsafe_allow_html=True)
     choice = st.segmented_control(
         "Map metric", options=list(METRICS), default=list(METRICS)[0],
         key="state_map_metric", label_visibility="collapsed",
@@ -259,14 +253,14 @@ def choropleth(df: pd.DataFrame, total_states: int) -> None:
         locations=latest["state"],
         locationmode="USA-states",
         z=z,
-        colorscale=spec["colorscale"],
-        marker_line_color=SURFACE,
+        colorscale=theme.colorscale(spec["ramp"][theme.mode()]),
+        marker_line_color=t["PAGE"],
         marker_line_width=1,
         text=[hover(r) for _, r in latest.iterrows()],
         hovertemplate="%{text}<extra></extra>",
         colorbar=dict(
             thickness=10, len=0.7, outlinewidth=0,
-            tickfont=dict(color=INK_MUTED, size=11),
+            tickfont=dict(color=t["INK_2"], size=11, family=FONT),
         ),
         **kwargs,
     ))
@@ -274,8 +268,8 @@ def choropleth(df: pd.DataFrame, total_states: int) -> None:
         scope="usa",
         bgcolor="rgba(0,0,0,0)",
         showlakes=False,
-        landcolor=GRIDLINE,
-        subunitcolor=SURFACE,
+        landcolor=t["BORDER"],
+        subunitcolor=t["PAGE"],
     )
     # plotly.js recomputes the USA-map projection scale on every resize or
     # responsive-autosize pass, and gets it wrong -- the map collapses to a
@@ -288,7 +282,9 @@ def choropleth(df: pd.DataFrame, total_states: int) -> None:
         height=470,
         margin=dict(l=0, r=0, t=8, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
-        hoverlabel=dict(bgcolor=SURFACE, bordercolor=GRIDLINE, font=dict(color=INK_PRIMARY)),
+        font=dict(family=FONT, color=t["INK_2"]),
+        hoverlabel=dict(bgcolor=t["SURFACE"], bordercolor=t["BORDER"],
+                        font=dict(family=FONT, color=t["INK"])),
     )
     import streamlit.components.v1 as components
 
@@ -297,6 +293,8 @@ def choropleth(df: pd.DataFrame, total_states: int) -> None:
         full_html=True,
         config={"displayModeBar": False, "responsive": False},
     )
+    # keep the iframe see-through so the map sits on the page colour in dark mode
+    html = html.replace("<head>", "<head><style>html,body{background:transparent}</style>", 1)
     # the iframe's first paint can happen before it has its final size, which
     # leaves the geo paths drawn at the wrong scale even though plotly's
     # internal projection state is correct; one deferred redraw repaints from
@@ -346,7 +344,7 @@ def rankings_table(df: pd.DataFrame) -> None:
 # --------------------------------------------------------------------------- #
 # Page
 # --------------------------------------------------------------------------- #
-def render(national: pd.DataFrame) -> None:
+def render(national: pd.DataFrame, source: str) -> None:
     df = load_state_data()
     if df is None or df.empty:
         st.info(
@@ -359,7 +357,7 @@ def render(national: pd.DataFrame) -> None:
     total_states = df["state"].nunique()
     names = df[["state", "state_name"]].drop_duplicates().sort_values("state_name")
 
-    st.sidebar.markdown('<div class="section-label">Filters</div>', unsafe_allow_html=True)
+    st.sidebar.markdown(ui.sidebar_label("Filters"), unsafe_allow_html=True)
     state_name = st.sidebar.selectbox("State", names["state_name"].tolist(),
                                       index=names["state_name"].tolist().index("California"))
     range_choice = st.sidebar.segmented_control(
@@ -368,14 +366,14 @@ def render(national: pd.DataFrame) -> None:
     months = RANGE_PRESETS.get(range_choice or "All")
 
     st.markdown(
-        f"""
-        <div class="hero-title">State by state</div>
-        <div class="hero-sub">Unemployment, house prices, and income for all 50 states + DC,
-        with each state ranked against the field.</div>
-        """,
+        ui.page_header(
+            "State by state",
+            "Unemployment, house prices, and income for all 50 states + DC, "
+            "with each state ranked against the field.",
+            source,
+        ),
         unsafe_allow_html=True,
     )
-    st.write("")
 
     sdf = df[df["state_name"] == state_name]
     kpi_row(sdf, total_states)

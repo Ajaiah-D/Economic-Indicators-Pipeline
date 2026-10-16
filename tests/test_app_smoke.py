@@ -62,7 +62,11 @@ def test_entry_point_renders_the_default_page():
     assert len(at.markdown) > 0
 
 
-PAGE_TITLES = {"national_page": "National overview"}
+PAGE_TITLES = {
+    "national_page": "National overview",
+    "states_page": "State by state",
+    "revisions_page": "Data revisions",
+}
 
 
 def _html(at: AppTest) -> str:

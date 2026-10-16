@@ -20,24 +20,18 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from theme import (
-    GRIDLINE,
-    INK_MUTED,
-    INK_PRIMARY,
-    STATUS,
-    SURFACE,
-    base_layout,
-    rgba,
-)
+import theme
+import ui
+from theme import PLOTLY_CONFIG, plotly_layout, rgba
 
 REPO_ROOT = Path(__file__).parent.parent
 VINTAGE_SNAPSHOT = REPO_ROOT / "data" / "vintage_dashboard.parquet"
 S3_KEY = "processed/fred_vintages/part-0.parquet"
 
-FIRST_PRINT = "#1b4f96"   # first-release markers
-LATEST = "#b57700"        # latest-revision bars (matches the GDP amber)
-THEN_LINE = "#2a78d6"     # time-machine "known then"
-NOW_LINE = INK_MUTED      # time-machine "known now"
+# palette slots (theme.SERIES): first prints and "known then" are slot 0,
+# today's estimate slot 1; "known now" is secondary ink, dotted
+FIRST_SLOT = 0
+LATEST_SLOT = 1
 
 # ALFRED's vintage archive only reaches back to late 1991. For older
 # observations the earliest archived value is just some early-90s vintage,
@@ -72,12 +66,13 @@ NBER_RECESSIONS = [
 
 
 def add_recession_bands(fig: go.Figure, x_min: pd.Timestamp, x_max: pd.Timestamp) -> None:
+    band = rgba(theme.tokens()["INK_2"], 0.12)
     for s, e in NBER_RECESSIONS:
         s, e = pd.Timestamp(s), pd.Timestamp(e)
         if e < x_min or s > x_max:
             continue
         fig.add_vrect(x0=max(s, x_min), x1=min(e, x_max),
-                      fillcolor=rgba(INK_MUTED, 0.10), line_width=0, layer="below")
+                      fillcolor=band, line_width=0, layer="below")
 
 
 @st.cache_data(ttl=3600, show_spinner="Loading vintage data...")
@@ -178,34 +173,33 @@ def latest_series(v: pd.DataFrame, label: str, cutoff: pd.Timestamp) -> pd.Serie
 # --------------------------------------------------------------------------- #
 # Sections
 # --------------------------------------------------------------------------- #
-def stat_tiles(rev: pd.DataFrame) -> None:
+def revision_tiles(rev: pd.DataFrame) -> list[ui.Tile]:
     flips = int(rev["sign_flip"].sum())
     total = len(rev)
     worst = rev.loc[rev["revision_pp"].abs().idxmax()]
     avg_abs = rev["revision_pp"].abs().mean()
+    return [
+        ui.Tile("Quarters whose growth later flipped sign", f"{flips} of {total}",
+                caption="reported growth when the economy was shrinking, or vice versa"),
+        ui.Tile("Largest single revision", f"{worst['revision_pp']:+.1f}pp",
+                change=_quarter(worst["date"]), show_arrow=False,
+                caption="difference between the first print and today's estimate"),
+        ui.Tile("Average revision size", f"{avg_abs:.2f}pp",
+                caption="mean absolute change in quarterly growth since first print"),
+    ]
 
-    c1, c2, c3 = st.columns(3, gap="medium")
-    with c1.container(border=True, key="statcard_rev1"):
-        st.metric("Quarters whose growth later flipped sign", f"{flips} of {total}")
-        st.markdown('<div class="tile-asof">reported growth when the economy was shrinking, or vice versa</div>',
-                    unsafe_allow_html=True)
-    with c2.container(border=True, key="statcard_rev2"):
-        st.metric("Largest single revision", f"{worst['revision_pp']:+.1f}pp",
-                  delta=_quarter(worst["date"]), delta_color="off")
-        st.markdown('<div class="tile-asof">difference between the first print and today\'s estimate</div>',
-                    unsafe_allow_html=True)
-    with c3.container(border=True, key="statcard_rev3"):
-        st.metric("Average revision size", f"{avg_abs:.2f}pp")
-        st.markdown('<div class="tile-asof">mean absolute change in quarterly growth since first print</div>',
-                    unsafe_allow_html=True)
+
+def stat_tiles(rev: pd.DataFrame) -> None:
+    st.markdown(ui.tile_grid(revision_tiles(rev), columns=3), unsafe_allow_html=True)
 
 
 def _revision_chart(rev: pd.DataFrame, labeler, value_hover: str, key: str,
                     y_range: tuple[float, float] | None = None) -> None:
+    t = theme.tokens()
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=rev["date"], y=rev["latest_growth"], name="Today's estimate",
-        marker_color=rgba(LATEST, 0.55), marker_line_width=0,
+        marker_color=rgba(theme.series_color(LATEST_SLOT), 0.55), marker_line_width=0,
         customdata=[labeler(d) for d in rev["date"]],
         hovertemplate="%{customdata}<br>Today: " + value_hover + "<extra></extra>",
     ))
@@ -213,7 +207,7 @@ def _revision_chart(rev: pd.DataFrame, labeler, value_hover: str, key: str,
     normal = rev[~rev["sign_flip"]]
     fig.add_trace(go.Scatter(
         x=normal["date"], y=normal["first_growth"], name="First print", mode="markers",
-        marker=dict(color=FIRST_PRINT, size=5),
+        marker=dict(color=theme.series_color(FIRST_SLOT), size=5),
         customdata=[labeler(d) for d in normal["date"]],
         hovertemplate="%{customdata}<br>First print: " + value_hover + "<extra></extra>",
     ))
@@ -221,22 +215,22 @@ def _revision_chart(rev: pd.DataFrame, labeler, value_hover: str, key: str,
         fig.add_trace(go.Scatter(
             x=flip["date"], y=flip["first_growth"], name="First print (sign later flipped)",
             mode="markers",
-            marker=dict(color=FIRST_PRINT, size=7,
-                        line=dict(color=STATUS["critical"], width=2)),
+            marker=dict(color=theme.series_color(FIRST_SLOT), size=7,
+                        line=dict(color=t["BAD"], width=2)),
             customdata=[labeler(d) for d in flip["date"]],
             hovertemplate="%{customdata}<br>First print: " + value_hover + " (sign later flipped)<extra></extra>",
         ))
     add_recession_bands(fig, rev["date"].min(), rev["date"].max())
-    fig.add_hline(y=0, line_color=INK_MUTED, line_width=1)
-    fig = base_layout(fig, height=380)
+    fig.add_hline(y=0, line_color=t["INK_2"], line_width=1)
+    fig = plotly_layout(fig, height=380)
     fig.update_layout(bargap=0.35)
     if y_range is not None:
         fig.update_yaxes(range=list(y_range))
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=key)
+    st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG, key=key)
 
 
 def first_print_section(rev_gdp: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label">As first reported vs today</div>', unsafe_allow_html=True)
+    st.markdown(ui.section("As first reported vs today"), unsafe_allow_html=True)
     tab_gdp, tab_pay = st.tabs(["GDP growth", "Payroll gains"])
 
     with tab_gdp:
@@ -271,7 +265,7 @@ def first_print_section(rev_gdp: pd.DataFrame) -> None:
 
 
 def time_machine(v: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label">Time machine</div>', unsafe_allow_html=True)
+    st.markdown(ui.section("Time machine"), unsafe_allow_html=True)
     st.caption(
         "Pick a moment and a series: the solid line is the data exactly as anyone could have seen it on "
         "that day; the dotted line is what we now know was actually happening. The gap between them is "
@@ -314,17 +308,17 @@ def time_machine(v: pd.DataFrame) -> None:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=then.index, y=then.values, name=f"As known on {cutoff:%b %d, %Y}",
-        line=dict(color=THEN_LINE, width=2.2),
+        line=dict(color=theme.series_color(FIRST_SLOT), width=2.2),
         hovertemplate="Known then: %{y:,.1f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=now.index, y=now.values, name="As we know it now",
-        line=dict(color=NOW_LINE, width=2, dash="dot"),
+        line=dict(color=theme.tokens()["INK_2"], width=2, dash="dot"),
         hovertemplate="Known now: %{y:,.1f}<extra></extra>",
     ))
     add_recession_bands(fig, window_start, cutoff)
-    fig = base_layout(fig, height=360)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    fig = plotly_layout(fig, height=360)
+    st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
     # the biggest then-vs-now gaps inside the window, as a small table
     joined = pd.DataFrame({"then": then, "now": now}).dropna()
@@ -365,7 +359,7 @@ def explainer() -> None:
 # --------------------------------------------------------------------------- #
 # Page
 # --------------------------------------------------------------------------- #
-def render() -> None:
+def render(source: str) -> None:
     v = load_vintages()
     if v is None or v.empty:
         st.info(
@@ -376,14 +370,14 @@ def render() -> None:
         return
 
     st.markdown(
-        """
-        <div class="hero-title">Data revisions</div>
-        <div class="hero-sub">Economic data is a draft: first prints get revised for years.
-        Every number here as it was originally published, against what it became.</div>
-        """,
+        ui.page_header(
+            "Data revisions",
+            "Economic data is a draft: first prints get revised for years. "
+            "Every number here as it was originally published, against what it became.",
+            source,
+        ),
         unsafe_allow_html=True,
     )
-    st.write("")
 
     rev = gdp_growth_revisions()
     if not rev.empty:
