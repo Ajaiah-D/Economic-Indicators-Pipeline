@@ -117,3 +117,70 @@ def test_config_has_only_light_and_dark_tables():
     # the old single-mode [theme.sidebar] table and `base` must be gone
     tables = {k for k, v in _config()["theme"].items() if isinstance(v, dict)}
     assert tables == {"light", "dark"}
+
+
+import ast
+import math
+
+import briefing
+
+
+def _indicator_meta_keys() -> set[str]:
+    """The app's real series list: the keys of INDICATOR_META in app.py."""
+    tree = ast.parse((ROOT / "dashboard" / "app.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "INDICATOR_META" for t in node.targets):
+            return {key.value for key in node.value.keys}
+    raise AssertionError("no top-level INDICATOR_META in dashboard/app.py")
+
+
+def test_every_series_has_a_good_direction():
+    assert set(theme.GOOD_DIRECTION) == _indicator_meta_keys()
+    # the briefing names the same eight series
+    assert set(theme.GOOD_DIRECTION) == set(briefing.QUIET_LABELS)
+
+
+def test_good_directions_are_the_agreed_ones():
+    assert theme.GOOD_DIRECTION == {
+        "cpi": "none",
+        "unemployment_rate": "down",
+        "u6_rate": "down",
+        "gdp": "up",
+        "fed_funds_rate": "none",
+        "housing_starts": "up",
+        "consumer_sentiment": "up",
+        "yield_spread": "up",
+    }
+
+
+@pytest.mark.parametrize(
+    "direction, delta, expected",
+    [
+        ("up", 1.5, "good"),
+        ("up", -1.5, "bad"),
+        ("up", 0.0, "neutral"),
+        ("down", 1.5, "bad"),
+        ("down", -1.5, "good"),
+        ("down", 0.0, "neutral"),
+        ("none", 1.5, "neutral"),
+        ("none", -1.5, "neutral"),
+        ("none", 0.0, "neutral"),
+        ("up", None, "neutral"),
+        ("down", math.nan, "neutral"),
+    ],
+)
+def test_change_tone_covers_every_direction_and_move(direction, delta, expected):
+    assert theme.change_tone(direction, delta) == expected
+
+
+def test_change_tone_rejects_an_unknown_direction():
+    with pytest.raises(ValueError):
+        theme.change_tone("sideways", 1.0)
+
+
+@pytest.mark.parametrize(
+    "delta, expected",
+    [(0.25, "▲"), (-0.25, "▼"), (0.0, "▬"), (None, "▬"), (math.nan, "▬")],
+)
+def test_arrow_always_shows_the_actual_direction(delta, expected):
+    assert theme.arrow(delta) == expected
