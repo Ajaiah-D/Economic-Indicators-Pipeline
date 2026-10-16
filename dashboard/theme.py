@@ -1,14 +1,76 @@
 """
-Shared design tokens and chart helpers for all dashboard pages.
+Design tokens, theme selection, chart palettes and chart helpers for every
+dashboard page (the "Civic" visual system).
 
-app.py (national) and states_view.py both import from here so the two pages
-stay visually identical without copy-pasted hex codes.
+LIGHT and DARK mirror the [theme.light] / [theme.dark] tables in
+.streamlit/config.toml; tests/test_theme.py fails if they drift. tokens()
+picks one set per script run from st.context.theme.type. The page CSS in
+ui.py carries BOTH sets through CSS light-dark(), so the app's own HTML
+follows a theme switch at once; Plotly figures use tokens() and follow it on
+the next rerun (Streamlit only reports the theme with a rerun).
 """
+
+from __future__ import annotations
 
 import pandas as pd
 import plotly.graph_objects as go
+import streamlit as st
 
-FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
+FONT = "Arial, Helvetica, sans-serif"
+FOCUS = "#ffdd00"  # GOV.UK focus yellow, the same in both modes
+
+# The spec's tokens, verbatim. CAUTION is the amber middle step the signal
+# banner uses for "Elevated risk", always next to its text label.
+LIGHT = {
+    "PAGE": "#ffffff",
+    "SURFACE": "#f3f3f3",
+    "RIBBON": "#2e3f52",
+    "HEADING": "#2e3f52",
+    "INK": "#0b0c0c",
+    "INK_2": "#505a5f",
+    "BORDER": "#cdd3d9",
+    "ACCENT": "#2b5f8a",
+    "TILE_RULE": "#5b7a96",
+    "GOOD": "#00703c",
+    "BAD": "#c2361f",
+    "NEUTRAL": "#505a5f",
+    "CAUTION": "#8a5a00",
+}
+DARK = {
+    "PAGE": "#151b22",
+    "SURFACE": "#1e2630",
+    "RIBBON": "#0f141a",
+    "HEADING": "#eef1f4",
+    "INK": "#eef1f4",
+    "INK_2": "#a8b3bf",
+    "BORDER": "#3a4652",
+    "ACCENT": "#9fc1e0",
+    "TILE_RULE": "#8fa9c2",
+    "GOOD": "#5cc98f",
+    "BAD": "#ff8a78",
+    "NEUTRAL": "#a8b3bf",
+    "CAUTION": "#e0a43a",
+}
+
+
+def _theme_type() -> str | None:
+    """"light" or "dark" as the browser last reported it. None (or "") before
+    it has reported, outside a script run, and under AppTest."""
+    return st.context.theme.type
+
+
+def mode() -> str:
+    return "dark" if _theme_type() == "dark" else "light"
+
+
+def tokens(theme_mode: str | None = None) -> dict[str, str]:
+    return DARK if (theme_mode or mode()) == "dark" else LIGHT
+
+
+# --------------------------------------------------------------------------- #
+# LEGACY tokens and helpers below: still imported by app.py, states_view.py
+# and revisions_view.py. Task 6 of the civic-ui plan deletes this block.
+# --------------------------------------------------------------------------- #
 
 # Colourblind-safe ink/surface tokens. These are the single source of truth for
 # every surface in the app -- .streamlit/config.toml mirrors them, and nothing

@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-for p in (ROOT, ROOT / "ingestion", ROOT / "scripts"):
+for p in (ROOT, ROOT / "ingestion", ROOT / "scripts", ROOT / "dashboard"):
     sys.path.insert(0, str(p))
 
 # modules read these at import time; tests never reach the network
