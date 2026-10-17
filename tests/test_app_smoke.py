@@ -85,6 +85,13 @@ def test_page_has_the_civic_layout(page_name, title):
     assert f'role="heading" aria-level="1">{title}</div>' in html
     assert 'class="civic-tiles"' in html
     assert 'class="civic-footer"' in html
+    # the footer describes the pipeline that actually runs (GitHub Actions),
+    # not the showcase-only Airflow DAG
+    footer = html[html.index('<footer class="civic-footer">'):]
+    footer = footer[: footer.index("</footer>")]
+    assert "FRED → S3 → pandas → dbt (DuckDB) → Streamlit" in footer
+    assert "GitHub Actions" in footer
+    assert "Airflow" not in footer
     assert len(at.metric) == 0  # tiles are HTML now, not st.metric
     for old in ("hero-title", "section-label", "tile-asof"):
         assert old not in html

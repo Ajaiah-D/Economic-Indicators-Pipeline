@@ -199,7 +199,7 @@ SIGNAL_NOTE = (
     "of flagged months turning out to be false alarms (not a forecast)."
 )
 FOOTER_SOURCE = "Source: Federal Reserve Economic Data (FRED), St. Louis Fed"
-FOOTER_PIPELINE = "Pipeline: Python → Airflow → dbt → Streamlit · refreshed daily via GitHub Actions"
+FOOTER_PIPELINE = "Pipeline: FRED → S3 → pandas → dbt (DuckDB) → Streamlit · refreshed daily via GitHub Actions"
 
 
 def apply_theme() -> None:
