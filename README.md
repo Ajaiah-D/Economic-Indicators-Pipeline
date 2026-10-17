@@ -99,7 +99,8 @@ Economic-Indicators-Pipeline/
 ├── ingestion/
 │   ├── fetch_fred.py                  national series -> S3
 │   ├── fetch_fred_states.py           ~150 state series -> S3 (rate-limited)
-│   └── fetch_fred_vintages.py         ALFRED vintage data -> S3
+│   ├── fetch_fred_vintages.py         ALFRED vintage data -> S3
+│   └── fred_retry.py                  retries transient FRED errors (429/5xx, network)
 ├── dags/
 │   └── fred_ingestion_dag.py          Airflow DAG (TaskFlow API)
 ├── spark/
@@ -287,7 +288,10 @@ leaves out dbt's build timestamp, and the run-time metadata file is only
 committed alongside a real data change, so on days FRED publishes nothing
 there is no commit and the dashboard's "last update" date stays put.
 
-If any series fails to fetch or upload, the ingestion script still attempts
+Each FRED call gets up to 4 attempts, with exponential backoff (2s, 4s,
+8s) on transient errors (HTTP 429 or 5xx, timeouts, dropped connections);
+permanent errors such as an unknown series fail at once. If any series
+still fails to fetch or upload, the ingestion script still attempts
 the rest, then exits non-zero. That fails the workflow before transform and
 export, so the dashboard keeps yesterday's snapshot (and its "last update"
 date) instead of publishing a partly stale one, and GitHub emails the

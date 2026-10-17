@@ -27,6 +27,11 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from fredapi import Fred
 
+try:
+    from fred_retry import call_with_retry
+except ImportError:  # imported as ingestion.fetch_* (the Airflow DAG)
+    from ingestion.fred_retry import call_with_retry
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
@@ -55,7 +60,7 @@ def _s3_client():
 
 def fetch_vintages(fred: Fred, series_id: str, label: str) -> pd.DataFrame:
     """Long frame: one row per (observation date, release date, value)."""
-    df = fred.get_series_all_releases(series_id)
+    df = call_with_retry(fred.get_series_all_releases, series_id)
     df = df.rename(columns={"realtime_start": "release_date"})
     df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
     df["release_date"] = pd.to_datetime(df["release_date"]).dt.date.astype(str)
