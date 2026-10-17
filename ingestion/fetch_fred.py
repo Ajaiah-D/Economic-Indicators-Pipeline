@@ -11,6 +11,11 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from fredapi import Fred
 
+try:
+    from fred_retry import call_with_retry
+except ImportError:  # imported as ingestion.fetch_* (the Airflow DAG)
+    from ingestion.fred_retry import call_with_retry
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
@@ -48,7 +53,7 @@ def _s3_key(series_id: str, label: str, run_date: date) -> str:
 
 def fetch_series(series_id: str, label: str) -> pd.DataFrame:
     fred = _fred_client()
-    data = fred.get_series(series_id)
+    data = call_with_retry(fred.get_series, series_id)
     df = (
         data.rename_axis("date")
         .reset_index()
