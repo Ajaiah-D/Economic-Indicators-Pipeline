@@ -1,11 +1,11 @@
 {
-  "last_updated_utc": "2026-10-29T18:15:33+00:00",
+  "last_updated_utc": "2026-11-02T21:36:30+00:00",
   "tables": {
     "economic_dashboard": {
-      "row_count": 1113,
+      "row_count": 1114,
       "date_range": {
         "start": "1934-01-01",
-        "end": "2026-09-01"
+        "end": "2026-10-01"
       }
     },
     "state_dashboard": {
@@ -23,9 +23,9 @@
       }
     }
   },
-  "row_count": 1113,
+  "row_count": 1114,
   "date_range": {
     "start": "1934-01-01",
-    "end": "2026-09-01"
+    "end": "2026-10-01"
   }
 }
