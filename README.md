@@ -8,7 +8,7 @@ showing how first-print numbers were later revised. Ingestion and
 transformation feed dbt models, and a three-page Streamlit dashboard serves
 the result, refreshed daily by a scheduled GitHub Actions workflow.
 
-**Live dashboard:** https://ajaiah-d-economic-indicators-pipeline-dashboardapp-d8tih5.streamlit.app/
+**Live dashboard:** https://economic-indicators-pipeline.streamlit.app/
 
 ---
 
