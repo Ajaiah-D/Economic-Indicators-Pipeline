@@ -14,11 +14,11 @@ the result, refreshed daily by a scheduled GitHub Actions workflow.
 
 ## Architecture
 
-1. **Ingestion** (`ingestion/`) pulls from the FRED API and writes timestamped CSVs to S3: `fetch_fred.py` for the nine national series, `fetch_fred_states.py` for ~150 state-level series (rate-limited batch), and `fetch_fred_vintages.py` for ALFRED vintage data -- every value each series has ever published.
+1. **Ingestion** (`ingestion/`) pulls from the FRED API and writes timestamped CSVs to S3: `fetch_fred.py` for the nine national series, `fetch_fred_states.py` for ~150 state-level series (rate-limited batch), and `fetch_fred_vintages.py` for ALFRED vintage data (every value each series has ever published).
 2. **Orchestration** in production is the GitHub Actions workflow in step 6. `dags/fred_ingestion_dag.py` is an Airflow DAG (TaskFlow API, one fetch/write task pair per indicator, retries with exponential backoff) for running the national ingestion locally; nothing schedules it. A test keeps its series list identical to the ingestion script's.
 3. **Transform** (`spark/`) reads the raw CSVs and writes processed Parquet back to S3: national wide table with MoM % change, 3-month rolling averages, and the 10Y-3M Treasury spread; a long state table with per-state YoY changes computed at each indicator's native frequency; and a long vintage table keyed by (series, observation date, release date).
 4. **Modeling** (`dbt/`) builds staging views and materialized marts with dbt-duckdb: the national mart adds seven binary stress flags + a composite signal score, the state mart adds per-date ranks across the 51-state field, and the vintage mart adds first-print / latest-revision window columns.
-5. **Dashboard** (`dashboard/`) is a multi-page Streamlit + Plotly app -- see "Dashboard pages" below.
+5. **Dashboard** (`dashboard/`) is a multi-page Streamlit + Plotly app (see "Dashboard pages" below).
 6. **Refresh** (`.github/workflows/refresh_data.yml`) runs ingestion, transform, dbt and the snapshot export daily and commits small snapshots back to the repo, so the deployed dashboard normally has current data without needing any credentials at deploy time.
 
 ## Dashboard pages
@@ -29,7 +29,7 @@ the result, refreshed daily by a scheduled GitHub Actions workflow.
   the prior one and scans each series' full history so it can say "housing
   starts fell 15%, the sharpest monthly drop since 2024, activating a stress
   flag" instead of just showing numbers. Unemployment is shown as both
-  **U-3** (the standard headline rate) and **U-6** (adds discouraged
+  U-3 (the standard headline rate) and U-6 (adds discouraged
   workers and involuntary part-time employment, a broader read on labor
   slack) side by side; the recession-signal flag stays keyed to U-3 since
   that's what it was backtested against.
@@ -41,8 +41,8 @@ the result, refreshed daily by a scheduled GitHub Actions workflow.
   gains as first reported vs today's estimate (computed within vintages, so
   benchmark rebasings of the level can't distort it), NBER recessions shaded
   on every chart, and a "time machine" that reconstructs unemployment,
-  housing starts, or payrolls exactly as they looked on any chosen date --
-  e.g. the economy as visible in September 2008 vs what we now know was
+  housing starts, or payrolls exactly as they looked on any chosen date.
+  For example, the economy as visible in September 2008 vs what we now know was
   happening, with a table of the biggest then-vs-now gaps in that window.
 
 ### Look and feel
@@ -85,12 +85,12 @@ Beyond these, the pipeline also ingests:
 - **State-level** (~150 series): `{ST}UR` unemployment rate (monthly), `{ST}STHPI`
   FHFA all-transactions house price index (quarterly), and `{ST}PCPI` per-capita
   personal income (annual) for all 50 states + DC. State-level unemployment is
-  U-3 only -- BLS's state-level U-6 series (e.g. `U6UNEM6CA`) are quarterly,
+  U-3 only. BLS's state-level U-6 series (e.g. `U6UNEM6CA`) are quarterly,
   not seasonally adjusted, reported as a 4-quarter moving average, and run
   over a year stale, too different in kind from the current monthly U-3 data
   to mix into the same page without misleading readers.
 - **Vintages** (ALFRED): every value ever published for GDP, PAYEMS (nonfarm
-  payrolls), UNRATE, and HOUST -- one row per (observation date, release date).
+  payrolls), UNRATE, and HOUST, one row per (observation date, release date).
 
 ## Project Structure
 
